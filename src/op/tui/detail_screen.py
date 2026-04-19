@@ -68,6 +68,9 @@ class DetailScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        from op.tui.app import AppState
+
+        self.app.set_state(AppState.DETAIL, detail=f'OP#{self.wp.id}')
         if self.client is not None:
             self.run_worker(self._load_activities(), exclusive=True)
 
@@ -92,17 +95,94 @@ class DetailScreen(Screen[None]):
             lines.append(f'[bold]{user}[/bold]  [dim]{when}[/dim]\n{activity.comment}\n')
         widget.update('\n'.join(lines) if lines else '[dim](no comments)[/dim]')
 
-    def _meta_text(self) -> str:
+    def _meta_text(
+        self,
+        *,
+        statuses_lookup: dict[int, str] | None = None,
+        types_lookup: dict[int, str] | None = None,
+        priorities_lookup: dict[int, str] | None = None,
+        users_lookup: dict[int, str] | None = None,
+    ) -> str:
+        """Build the meta header with overlaid pending-diff annotations."""
+        remote = self.config.remote
+        statuses = statuses_lookup if statuses_lookup is not None else remote.statuses
+        types = types_lookup if types_lookup is not None else remote.types
+        priorities = priorities_lookup if priorities_lookup is not None else remote.priorities
+        users = users_lookup if users_lookup is not None else {**remote.users, **remote.groups}
+
+        pending = self._pending_form()
+        subject = self._diff_text(
+            self.wp.subject, pending.subject if pending else None
+        )
+
         parts = [
-            f'[bold cyan]OP#{self.wp.id}[/bold cyan]  [bold]{self.wp.subject}[/bold]',
-            f'Status: {self.wp.status_name}   Type: {self.wp.type_name}   '
-            f'Project: {self.wp.project_name}',
+            f'[bold cyan]OP#{self.wp.id}[/bold cyan]  [bold]{subject}[/bold]',
+            self._status_type_project_line(pending, statuses, types),
         ]
-        if self.wp.priority_name:
-            parts.append(f'Priority: {self.wp.priority_name}')
-        if self.wp.assignee_name:
-            parts.append(f'Assignee: {self.wp.assignee_name}')
+        priority_line = self._priority_line(pending, priorities)
+        if priority_line:
+            parts.append(priority_line)
+        assignee_line = self._assignee_line(pending, users)
+        if assignee_line:
+            parts.append(assignee_line)
+        start_due_line = self._start_due_line(pending)
+        if start_due_line:
+            parts.append(start_due_line)
         return '\n'.join(parts)
+
+    def _pending_form(self):  # noqa: ANN202
+        try:
+            op = self.app.pending_ops.get(self.wp.id)
+        except AttributeError:
+            return None
+        return op.form if op else None
+
+    @staticmethod
+    def _diff_text(current: str, new_value) -> str:  # noqa: ANN001
+        if new_value is None or new_value == current:
+            return current or ''
+        return f'{current} [bold yellow]→ {new_value}[/bold yellow]'
+
+    def _status_type_project_line(
+        self, pending, statuses: dict[int, str], types: dict[int, str]
+    ):  # noqa: ANN202
+        status = self._diff_text(
+            self.wp.status_name, statuses.get(pending.status_id) if pending else None
+        )
+        type_ = self._diff_text(
+            self.wp.type_name, types.get(pending.type_id) if pending else None
+        )
+        return f'Status: {status}   Type: {type_}   Project: {self.wp.project_name}'
+
+    def _priority_line(self, pending, priorities: dict[int, str]):  # noqa: ANN202
+        if not self.wp.priority_name and not (pending and pending.priority_id):
+            return None
+        new = priorities.get(pending.priority_id) if pending else None
+        return f'Priority: {self._diff_text(self.wp.priority_name or "", new)}'
+
+    def _assignee_line(self, pending, users: dict[int, str]):  # noqa: ANN202
+        current = self.wp.assignee_name or ''
+        new = None
+        if pending is not None:
+            if pending.assignee_id is not None:
+                new = users.get(pending.assignee_id) or f'#{pending.assignee_id}'
+            elif pending.unassign:
+                new = '(none)'
+        if not current and not new:
+            return None
+        return f'Assignee: {self._diff_text(current, new)}'
+
+    def _start_due_line(self, pending):  # noqa: ANN202
+        current_start = self.wp.start_date.isoformat() if self.wp.start_date else ''
+        current_due = self.wp.due_date.isoformat() if self.wp.due_date else ''
+        new_start = pending.start_date if pending else None
+        new_due = pending.due_date if pending else None
+        has_anything = any([current_start, current_due, new_start, new_due])
+        if not has_anything:
+            return None
+        start_cell = self._diff_text(current_start or '—', new_start)
+        due_cell = self._diff_text(current_due or '—', new_due)
+        return f'Start: {start_cell}   Due: {due_cell}'
 
     # --- actions ---------------------------------------------------------
 
@@ -117,30 +197,27 @@ class DetailScreen(Screen[None]):
         modal = UpdateModal(
             remote=self.config.remote, target_count=1, wp=self.wp, client=self.client
         )
+        pending = self._pending_form()
+        if pending is not None:
+            modal.form.merge_from(pending)
 
-        async def _apply(form: UpdateForm | None) -> None:
-            if form is None:
+        def _on_dismiss(form: UpdateForm | None) -> None:
+            if form is None or not form.has_changes:
                 return
-            if self.client is None:
-                self.notify('No API client — changes not saved', severity='warning')
-                return
-            changes = form.api_changes()
-            if not changes:
-                self.notify('No changes to apply', severity='warning')
-                return
-            try:
-                fresh = await self.client.update_work_package(
-                    self.wp.id, lock_version=self.wp.lock_version, changes=changes
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.notify(f'Update failed: {exc}', severity='error', timeout=8)
-                return
-            if fresh is not None:
-                self.wp = fresh
+            fresh_form = UpdateForm()
+            fresh_form.merge_from(form)
+            self.app.pending_ops.add_or_merge(
+                self.wp.id, fresh_form, original_subject=self.wp.subject
+            )
             self._refresh_header()
-            self.notify(f'Updated OP#{self.wp.id}', severity='information')
+            self._refresh_state_label()
 
-        self.app.push_screen(modal, _apply)
+        self.app.push_screen(modal, _on_dismiss)
+
+    def _refresh_state_label(self) -> None:
+        from op.tui.app import AppState
+
+        self.app.set_state(AppState.DETAIL, detail=f'OP#{self.wp.id}')
 
     def _refresh_header(self) -> None:
         """Re-render the meta-label after the wp was updated."""
