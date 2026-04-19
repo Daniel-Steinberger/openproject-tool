@@ -208,10 +208,31 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
     def _set_date_input(self, target: Input, value: date) -> None:
         """Write `value` to `target` and, when filling Start and Due is empty, mirror to Due."""
         target.value = value.isoformat()
-        if target.id == 'input-start':
-            due = self.query_one('#input-due', Input)
-            if not due.value.strip():
-                due.value = value.isoformat()
+        mirrored = self._mirror_start_to_due_target(
+            target_id=target.id or '',
+            picked_iso=value.isoformat(),
+            due_current=self.query_one('#input-due', Input).value
+            if self._show_scalars
+            else '',
+        )
+        if mirrored is not None:
+            self.query_one('#input-due', Input).value = mirrored
+
+    @staticmethod
+    def _mirror_start_to_due_target(
+        *, target_id: str, picked_iso: str, due_current: str
+    ) -> str | None:
+        """Decide whether writing `picked_iso` into `target_id` should also populate Due.
+
+        Mirroring happens only when we're writing to the start field AND the due field
+        is currently empty. Returns the value to write into Due, or None to leave alone.
+        Pure function — no widget access — so it stays easy to unit-test.
+        """
+        if target_id != 'input-start':
+            return None
+        if due_current.strip():
+            return None
+        return picked_iso
 
     async def action_pick_date(self) -> None:
         """Open a calendar popup for the currently-focused start/due input."""
@@ -224,7 +245,8 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
 
         def _on_pick(picked: date | None) -> None:
             if picked is not None:
-                target_input.value = picked.isoformat()
+                # _set_date_input handles start->due mirroring when due is empty.
+                self._set_date_input(target_input, picked)
 
         self.app.push_screen(
             CalendarModal(initial=initial, busy_days=busy), _on_pick

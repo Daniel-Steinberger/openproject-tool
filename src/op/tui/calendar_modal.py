@@ -8,6 +8,8 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Label
 
+from op.date_shortcuts import next_free_day
+
 
 class CalendarModal(ModalScreen[date | None]):
     """Month-view calendar picker.
@@ -32,6 +34,8 @@ class CalendarModal(ModalScreen[date | None]):
         Binding('down', 'next_week', 'Next week', show=False),
         Binding('pageup', 'prev_month', 'Prev month', show=True),
         Binding('pagedown', 'next_month', 'Next month', show=True),
+        Binding('ctrl+t', 'jump_today', 'Today', show=True),
+        Binding('ctrl+n', 'jump_next_free', 'Next free', show=True),
     ]
 
     DEFAULT_CSS = """
@@ -53,6 +57,8 @@ class CalendarModal(ModalScreen[date | None]):
         super().__init__()
         self.selected: date = initial
         self.busy_days: set[date] = busy_days or set()
+        # Overridable for deterministic tests.
+        self._today_override: date | None = None
 
     def compose(self):  # noqa: ANN201
         with Vertical():
@@ -86,6 +92,15 @@ class CalendarModal(ModalScreen[date | None]):
         self.selected = _shift_months(self.selected, 1)
         self._refresh_display()
 
+    def action_jump_today(self) -> None:
+        self.selected = self._today_override or date.today()
+        self._refresh_display()
+
+    def action_jump_next_free(self) -> None:
+        today = self._today_override or date.today()
+        self.selected = next_free_day(today, busy_days=self.busy_days)
+        self._refresh_display()
+
     def action_pick(self) -> None:
         self.dismiss(self.selected)
 
@@ -104,7 +119,8 @@ class CalendarModal(ModalScreen[date | None]):
         self.query_one('#cal-grid', Label).update(self._grid_markup())
 
     def _grid_markup(self) -> str:
-        lines: list[str] = ['Mo Tu We Th Fr Sa Su']
+        """Rich-markup string rendered by the Label widget."""
+        lines: list[str] = ['[dim]Mo Tu We Th Fr Sa Su[/dim]']
         month_cal = calendar.monthcalendar(self.selected.year, self.selected.month)
         for week in month_cal:
             cells: list[str] = []
@@ -113,12 +129,15 @@ class CalendarModal(ModalScreen[date | None]):
                     cells.append('  ')
                     continue
                 cell_date = date(self.selected.year, self.selected.month, day)
-                marker = f'{day:2d}'
+                text = f'{day:2d}'
                 if cell_date == self.selected:
-                    marker = f'>{day:1d}<' if day >= 10 else f'>{day}<'
+                    cells.append(f'[bold black on bright_cyan]{text}[/]')
                 elif cell_date in self.busy_days:
-                    marker = f'*{day:1d}' if day >= 10 else f' *{day}'[-2:]
-                cells.append(marker)
+                    cells.append(f'[black on yellow]{text}[/]')
+                elif cell_date.weekday() >= 5:
+                    cells.append(f'[dim]{text}[/dim]')
+                else:
+                    cells.append(text)
             lines.append(' '.join(cells))
         return '\n'.join(lines)
 
