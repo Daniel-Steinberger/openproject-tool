@@ -10,6 +10,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, Label, Markdown
 
 from op.config import Config
+from op.html_to_markdown import html_to_markdown
 from op.models import Activity, WorkPackage
 from op.tui.comment_modal import CommentModal
 from op.tui.update_form import UpdateForm
@@ -140,9 +141,10 @@ class DetailScreen(Screen[None]):
         widgets: list = []
         self._activity_widgets = []
         for activity in self._activities:
-            if not activity.comment:
+            source = self._activity_markdown_source(activity)
+            if not source:
                 continue
-            user = activity.user_name or '(unknown)'
+            user = self._resolve_user_name(activity)
             when = activity.created_at or ''
             widgets.append(
                 Label(
@@ -150,12 +152,34 @@ class DetailScreen(Screen[None]):
                     classes='activity-head',
                 )
             )
-            md = Markdown(activity.comment)
-            self._activity_widgets.append((md, activity.comment))
+            md = Markdown(source)
+            self._activity_widgets.append((md, source))
             widgets.append(md)
         if not widgets:
             widgets.append(Label('(no comments)', id='activities-empty'))
         await container.mount(*widgets)
+
+    def _activity_markdown_source(self, activity: Activity) -> str:
+        """Prefer html→markdown when html is present: WYSIWYG content (tables etc.)
+        is usually richer in html than in the `raw` markdown source."""
+        if activity.comment_html:
+            converted = html_to_markdown(activity.comment_html).strip()
+            if converted:
+                return converted
+        return activity.comment or ''
+
+    def _resolve_user_name(self, activity: Activity) -> str:
+        """Fallback chain for the author display: link title → remote.users → id → (unknown)."""
+        if activity.user_name:
+            return activity.user_name
+        if activity.user_id is not None:
+            remote = self.config.remote
+            lookup = {**remote.users, **remote.groups}
+            name = lookup.get(activity.user_id)
+            if name:
+                return name
+            return f'User #{activity.user_id}'
+        return '(unknown)'
 
     def _meta_text(
         self,

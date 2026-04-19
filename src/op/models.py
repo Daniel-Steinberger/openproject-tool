@@ -90,17 +90,23 @@ class Group(_ApiModel):
 class Activity(_ApiModel):
     id: int
     comment: str | None = None
+    comment_html: str | None = None
     user_name: str | None = None
+    user_id: int | None = None
     created_at: str | None = None
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> Activity:
-        comment_raw = (payload.get('comment') or {}).get('raw') or None
+        comment_payload = payload.get('comment') or {}
+        comment_raw = comment_payload.get('raw') or None
+        comment_html = comment_payload.get('html') or None
         links = payload.get('_links', {})
         return cls(
             id=payload['id'],
             comment=comment_raw,
+            comment_html=comment_html,
             user_name=_link_title(links, 'user'),
+            user_id=_link_id(links, 'user'),
             created_at=payload.get('createdAt'),
         )
 
