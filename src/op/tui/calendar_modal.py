@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 
+from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
@@ -46,7 +47,7 @@ class CalendarModal(ModalScreen[date | None]):
         background: $panel;
         border: round $accent;
         padding: 1 2;
-        width: 32;
+        width: 60;
         height: auto;
     }
     """
@@ -63,7 +64,7 @@ class CalendarModal(ModalScreen[date | None]):
     def compose(self):  # noqa: ANN201
         with Vertical():
             yield Label(self.selected.strftime('%B %Y'), id='cal-header')
-            yield Label(self._grid_markup(), id='cal-grid')
+            yield Label(self._build_grid(), id='cal-grid')
             yield Footer()
 
     # --- navigation ------------------------------------------------------
@@ -116,10 +117,44 @@ class CalendarModal(ModalScreen[date | None]):
         self.query_one('#cal-header', Label).update(
             self.selected.strftime('%B %Y')
         )
-        self.query_one('#cal-grid', Label).update(self._grid_markup())
+        self.query_one('#cal-grid', Label).update(self._build_grid())
 
+    def _build_grid(self) -> Text:
+        """Rendered month grid as a styled rich.Text object.
+
+        Using Text objects (rather than markup strings) sidesteps any issues with
+        Label's markup handling — each span carries its own Style.
+        """
+        grid = Text()
+        grid.append('Mo Tu We Th Fr Sa Su\n', style='dim')
+        month_cal = calendar.monthcalendar(self.selected.year, self.selected.month)
+        for week_index, week in enumerate(month_cal):
+            for day_index, day in enumerate(week):
+                if day_index > 0:
+                    grid.append(' ')
+                if day == 0:
+                    grid.append('  ')
+                    continue
+                cell_date = date(self.selected.year, self.selected.month, day)
+                cell_text = f'{day:2d}'
+                grid.append(cell_text, style=self._style_for(cell_date))
+            if week_index < len(month_cal) - 1:
+                grid.append('\n')
+        return grid
+
+    def _style_for(self, cell_date: date) -> str:
+        """Rich style string for a day cell — selected > busy > weekend > default."""
+        if cell_date == self.selected:
+            return 'bold black on bright_cyan'
+        if cell_date in self.busy_days:
+            return 'black on yellow'
+        if cell_date.weekday() >= 5:
+            return 'dim'
+        return ''
+
+    # Backwards-compatible accessor used by tests — returns a markup-looking string
+    # that retains the style tokens so existing tests can assert on them.
     def _grid_markup(self) -> str:
-        """Rich-markup string rendered by the Label widget."""
         lines: list[str] = ['[dim]Mo Tu We Th Fr Sa Su[/dim]']
         month_cal = calendar.monthcalendar(self.selected.year, self.selected.month)
         for week in month_cal:
@@ -130,14 +165,8 @@ class CalendarModal(ModalScreen[date | None]):
                     continue
                 cell_date = date(self.selected.year, self.selected.month, day)
                 text = f'{day:2d}'
-                if cell_date == self.selected:
-                    cells.append(f'[bold black on bright_cyan]{text}[/]')
-                elif cell_date in self.busy_days:
-                    cells.append(f'[black on yellow]{text}[/]')
-                elif cell_date.weekday() >= 5:
-                    cells.append(f'[dim]{text}[/dim]')
-                else:
-                    cells.append(text)
+                style = self._style_for(cell_date)
+                cells.append(f'[{style}]{text}[/]' if style else text)
             lines.append(' '.join(cells))
         return '\n'.join(lines)
 
