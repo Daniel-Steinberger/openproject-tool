@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import typing as T
 from dataclasses import dataclass, field
 
 from op.config import DefaultsConfig, RemoteConfig
+
+log = logging.getLogger(__name__)
 
 _FILTER_KEY_MAP: dict[str, tuple[str, str]] = {
     # user-facing key: (OpenProject filter key, RemoteConfig attribute)
@@ -21,6 +24,7 @@ class SearchQuery:
     task_id: int | None = None
     words: list[str] = field(default_factory=list)
     filters: dict[str, list[str]] = field(default_factory=dict)
+    default_filter_keys: set[str] = field(default_factory=set)
 
 
 def parse(tokens: list[str], *, defaults: DefaultsConfig | None = None) -> SearchQuery:
@@ -49,7 +53,13 @@ def parse(tokens: list[str], *, defaults: DefaultsConfig | None = None) -> Searc
         return SearchQuery(task_id=int(non_filter_tokens[0]))
 
     filters = _merge_with_defaults(explicit_filters, wildcard_keys, defaults)
-    return SearchQuery(task_id=None, words=non_filter_tokens, filters=filters)
+    default_filter_keys = set(filters) - set(explicit_filters)
+    return SearchQuery(
+        task_id=None,
+        words=non_filter_tokens,
+        filters=filters,
+        default_filter_keys=default_filter_keys,
+    )
 
 
 def _merge_with_defaults(
@@ -79,7 +89,12 @@ def _defaults_as_dict(defaults: DefaultsConfig) -> dict[str, list[str]]:
 def build_api_filters(
     query: SearchQuery, remote: RemoteConfig
 ) -> list[dict[str, T.Any]]:
-    """Translate a SearchQuery into the OpenProject filter-JSON array."""
+    """Translate a SearchQuery into the OpenProject filter-JSON array.
+
+    Values from user-supplied filters that cannot be resolved raise `ValueError`.
+    Values from default filters are dropped with a warning — a stale default should
+    not block the entire search.
+    """
     api_filters: list[dict[str, T.Any]] = []
 
     for word in query.words:
@@ -91,13 +106,30 @@ def build_api_filters(
             continue
         if key not in _FILTER_KEY_MAP:
             valid = ', '.join(sorted(_FILTER_KEY_MAP))
-            raise ValueError(
-                f'Unknown filter key: {key!r}. Valid keys: {valid}'
-            )
+            raise ValueError(f'Unknown filter key: {key!r}. Valid keys: {valid}')
         op_key, remote_attr = _FILTER_KEY_MAP[key]
         lookup: dict[int, str] = getattr(remote, remote_attr)
-        ids = [str(_resolve_name(key, v, lookup)) for v in values]
-        api_filters.append({op_key: {'operator': '=', 'values': ids}})
+        is_default = key in query.default_filter_keys
+
+        resolved_ids: list[str] = []
+        for value in values:
+            entity_id = _lookup_name(value, lookup)
+            if entity_id is None:
+                if is_default:
+                    log.warning(
+                        'Dropping default %s value %r — not known on remote',
+                        key,
+                        value,
+                    )
+                    continue
+                valid_values = ', '.join(sorted(lookup.values())) or '(none loaded)'
+                raise ValueError(
+                    f'Unknown {key} value: {value!r}. Valid values: {valid_values}'
+                )
+            resolved_ids.append(str(entity_id))
+
+        if resolved_ids:
+            api_filters.append({op_key: {'operator': '=', 'values': resolved_ids}})
 
     return api_filters
 
@@ -106,12 +138,12 @@ def _is_meta_status(values: list[str]) -> bool:
     return len(values) == 1 and values[0].lower() in ('open', 'closed')
 
 
-def _resolve_name(key: str, value: str, lookup: dict[int, str]) -> int:
+def _lookup_name(value: str, lookup: dict[int, str]) -> int | None:
     needle = value.casefold()
     for entity_id, name in lookup.items():
         if name.casefold() == needle:
             return entity_id
-    raise ValueError(f'Unknown {key} value: {value!r}')
+    return None
 
 
 __all__ = ['SearchQuery', 'parse', 'build_api_filters']
