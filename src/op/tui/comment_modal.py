@@ -3,7 +3,7 @@ from __future__ import annotations
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Label, TextArea
+from textual.widgets import Footer, Label, TextArea
 
 
 class CommentModal(ModalScreen[str | None]):
@@ -44,8 +44,9 @@ class CommentModal(ModalScreen[str | None]):
 
     def compose(self):  # noqa: ANN201
         with Vertical():
-            yield Label('New comment — ctrl+s to submit, esc to cancel')
+            yield Label('New comment')
             yield TextArea(self._initial)
+            yield Footer()
 
     def on_mount(self) -> None:
         self.query_one(TextArea).focus()

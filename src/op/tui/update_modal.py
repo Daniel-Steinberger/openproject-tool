@@ -3,7 +3,7 @@ from __future__ import annotations
 from textual.binding import Binding
 from textual.containers import Grid, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Label, Select
+from textual.widgets import Footer, Label, Select
 
 from op.config import RemoteConfig
 from op.tui.update_form import UpdateForm
@@ -58,7 +58,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                 yield _make_select(self._remote.priorities, id='sel-priority')
                 yield Label('Assignee:')
                 yield _make_select(self._remote.users, id='sel-assignee')
-            yield Label('[g] Apply   [q] Cancel', id='update-footer')
+            yield Footer()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         field_map = {
