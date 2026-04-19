@@ -116,7 +116,13 @@ def build_api_filters(
 
         resolved_ids: list[str] = []
         for value in values:
-            entity_id = _lookup_name(value, merged_lookup)
+            try:
+                entity_id, resolved_name = _resolve_value(value, merged_lookup)
+            except _AmbiguousMatch as amb:
+                raise ValueError(
+                    f'Ambiguous {key} value: {value!r}. '
+                    f'Matches: {", ".join(amb.candidates)}'
+                ) from None
             if entity_id is None:
                 if is_default:
                     log.warning(
@@ -130,6 +136,14 @@ def build_api_filters(
                 )
                 raise ValueError(
                     f'Unknown {key} value: {value!r}. Valid values: {valid_values}'
+                )
+            if resolved_name != value:
+                log.info(
+                    'Resolved %s %r → %r (id=%d)',
+                    key,
+                    value,
+                    resolved_name,
+                    entity_id,
                 )
             resolved_ids.append(str(entity_id))
 
@@ -149,6 +163,42 @@ def _lookup_name(value: str, lookup: dict[int, str]) -> int | None:
         if name.casefold() == needle:
             return entity_id
     return None
+
+
+class _AmbiguousMatch(Exception):
+    """Raised when a fuzzy value matches more than one entry in the lookup."""
+
+    def __init__(self, candidates: list[str]) -> None:
+        super().__init__(f'ambiguous: {candidates}')
+        self.candidates = candidates
+
+
+def _resolve_value(
+    value: str, lookup: dict[int, str]
+) -> tuple[int | None, str]:
+    """Resolve a user-supplied filter value.
+
+    - Exact (case-fold) match wins, returns (id, value).
+    - Otherwise, case-fold substring match:
+        * exactly 1 hit → return (id, resolved_name)
+        * multiple hits → raise _AmbiguousMatch with the candidate names
+        * no hits → return (None, value)
+    """
+    exact = _lookup_name(value, lookup)
+    if exact is not None:
+        return exact, value
+
+    needle = value.casefold()
+    matches = [
+        (entity_id, name)
+        for entity_id, name in lookup.items()
+        if needle in name.casefold()
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise _AmbiguousMatch(sorted(name for _, name in matches))
+    return None, value
 
 
 __all__ = ['SearchQuery', 'parse', 'build_api_filters']

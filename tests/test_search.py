@@ -335,7 +335,10 @@ class TestFuzzyMatch:
 
     def test_fuzzy_match_logs_resolved_name(self, caplog) -> None:  # noqa: ANN001
         import logging
-        caplog.set_level(logging.DEBUG, logger='op.search')
+        # setup_logging from prior tests may have set op.propagate=False, which
+        # blocks caplog — re-enable propagation just for this test.
+        logging.getLogger('op').propagate = True
+        caplog.set_level(logging.INFO, logger='op.search')
         remote = RemoteConfig(users={5: 'Niklas Moschuring nmo'})
         q = SearchQuery(filters={'assignee': ['nmo']})
         build_api_filters(q, remote)
