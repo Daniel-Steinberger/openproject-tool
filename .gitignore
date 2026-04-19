@@ -14,8 +14,7 @@ dist/
 venv/
 env/
 
-# Poetry
-poetry.lock
+# Lock files are committed — no ignore
 
 # Testing
 .pytest_cache/

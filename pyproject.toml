@@ -1,12 +1,11 @@
-[tool.poetry]
+[project]
 name = "openproject-tool"
 version = "0.1.0"
 description = "Fast, keyboard-driven CLI and TUI for OpenProject"
-authors = ["Daniel Steinberger <Daniel.Steinberger@dvs.ag>"]
-license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/dsteinberger/openproject-tool"
-repository = "https://github.com/dsteinberger/openproject-tool"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Daniel Steinberger", email = "Daniel.Steinberger@dvs.ag" }]
 keywords = ["openproject", "cli", "tui", "textual", "project-management"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -21,28 +20,36 @@ classifiers = [
     "Topic :: Software Development",
     "Topic :: Utilities",
 ]
-packages = [{ include = "op", from = "src" }]
+dependencies = [
+    "textual>=1.0",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "tomlkit>=0.13",
+]
 
-[tool.poetry.scripts]
+[project.urls]
+Homepage = "https://github.com/dsteinberger/openproject-tool"
+Repository = "https://github.com/dsteinberger/openproject-tool"
+Issues = "https://github.com/dsteinberger/openproject-tool/issues"
+
+[project.scripts]
 op = "op.cli:main"
 
-[tool.poetry.dependencies]
-python = "^3.11"
-textual = "^1.0"
-httpx = "^0.27"
-pydantic = "^2.0"
-tomlkit = "^0.13"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0"
-pytest-asyncio = "^0.23"
-respx = "^0.21"
-pytest-textual-snapshot = "^1.0"
-ruff = "^0.8"
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "pytest-textual-snapshot>=1.0",
+    "ruff>=0.8",
+]
 
 [build-system]
-requires = ["poetry-core>=1.8"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/op"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
