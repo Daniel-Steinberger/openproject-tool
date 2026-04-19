@@ -139,6 +139,50 @@ class TestRunEndToEnd:
         assert 'OP#1234' in buf.getvalue()
         assert 'Direkt geladen' in buf.getvalue()
 
+    async def test_interactive_mode_passes_client_to_opapp(
+        self, monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
+    ) -> None:
+        """Regression: cli.run must forward the OpenProjectClient into OpApp(client=...)."""
+        import httpx
+
+        from op.api import OpenProjectClient
+        from op.tui.app import OpApp
+
+        monkeypatch.setenv('OP_API_KEY', 'test')
+        config = Config(
+            connection=ConnectionConfig(base_url=BASE_URL),
+            defaults=DefaultsConfig(),
+            remote=RemoteConfig(),
+        )
+        # Give the empty-filter interactive branch at least one task so we hit the TUI path.
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(
+            return_value=httpx.Response(
+                200,
+                json={'total': 0, 'count': 0, '_embedded': {'elements': []}},
+            )
+        )
+
+        captured: dict = {}
+
+        original_init = OpApp.__init__
+
+        def _spy_init(self, *, tasks, config, client=None):  # noqa: ANN001, ANN202
+            captured['client'] = client
+            original_init(self, tasks=tasks, config=config, client=client)
+            # Prevent the test from actually running the TUI.
+            raise SystemExit(0)
+
+        monkeypatch.setattr(OpApp, '__init__', _spy_init)
+
+        args = _parse_args(['-i', 'nothing'])
+        try:
+            await run(args, config=config, config_path=None, console=Console())
+        except SystemExit:
+            pass
+
+        assert captured.get('client') is not None
+        assert isinstance(captured['client'], OpenProjectClient)
+
     async def test_search_by_words_prints_list(
         self, monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
     ) -> None:

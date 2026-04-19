@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import typing as T
 import webbrowser
 
@@ -7,6 +8,8 @@ from rich.text import Text
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header
+
+log = logging.getLogger(__name__)
 
 from op.config import Config
 from op.models import WorkPackage
@@ -77,6 +80,11 @@ class MainScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        log.info(
+            'MainScreen.on_mount client=%s tasks=%d',
+            type(self.client).__name__ if self.client is not None else 'None',
+            len(self.tasks),
+        )
         table = self.query_one('#task-list', DataTable)
         table.add_column('', key=_COL_SEL, width=3)
         table.add_column('', key=_COL_QUEUE, width=3)
@@ -132,6 +140,10 @@ class MainScreen(Screen[None]):
         if self._queue().count == 0:
             self.notify('No pending changes', severity='warning')
             return
+        log.info(
+            'MainScreen.action_review_queue pushing ReviewScreen client=%s',
+            type(self.client).__name__ if self.client is not None else 'None',
+        )
         from op.tui.review_screen import ReviewScreen
 
         self.app.push_screen(

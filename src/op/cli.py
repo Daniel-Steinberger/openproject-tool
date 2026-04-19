@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 from rich.console import Console, Group
 from rich.text import Text
@@ -84,8 +87,13 @@ async def run(
         query = parse(args.query, defaults=config.defaults)
         if args.interactive:
             initial_tasks = await _initial_tasks(client, query, config)
-            app = OpApp(tasks=initial_tasks, config=config)
+            log.info(
+                'Starting TUI: client=%s tasks=%d',
+                type(client).__name__, len(initial_tasks),
+            )
+            app = OpApp(tasks=initial_tasks, config=config, client=client)
             await app.run_async()
+            log.info('TUI exited cleanly')
             return 0
 
         if query.task_id is not None:

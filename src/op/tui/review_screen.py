@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import typing as T
 
 from rich.text import Text
@@ -13,6 +14,8 @@ from op.config import Config
 from op.queue import PendingOperation
 from op.tui.update_form import UpdateForm
 from op.tui.update_modal import UpdateModal
+
+log = logging.getLogger(__name__)
 
 _COL_ID = 'id'
 _COL_SUBJECT = 'subject'
@@ -42,6 +45,11 @@ class ReviewScreen(Screen[None]):
     def on_mount(self) -> None:
         from op.tui.app import AppState
 
+        log.info(
+            'ReviewScreen.on_mount client=%s pending=%d',
+            type(self.client).__name__ if self.client is not None else 'None',
+            self.app.pending_ops.count,
+        )
         self.app.set_state(AppState.REVIEW)
         table = self.query_one('#review-table', DataTable)
         table.add_column('ID', key=_COL_ID, width=10)
@@ -106,6 +114,9 @@ class ReviewScreen(Screen[None]):
             self.app.pop_screen()
             return
         if self.client is None:
+            log.error(
+                'ReviewScreen.action_apply_all: self.client is None — apply aborted'
+            )
             self.notify(
                 'Cannot apply — no API client. Start op with OP_API_KEY set.',
                 severity='error',
