@@ -97,6 +97,12 @@ class MainScreen(Screen[None]):
         table.focus()
         self._update_state_label()
 
+    def on_screen_resume(self) -> None:
+        """Re-populate queue markers + state label when returning from a sub-screen."""
+        for task in self.tasks:
+            self._refresh_queue_cell(task.id)
+        self._update_state_label()
+
     # --- actions ---------------------------------------------------------
 
     def action_toggle_selected(self) -> None:
@@ -126,8 +132,11 @@ class MainScreen(Screen[None]):
         if self._queue().count == 0:
             self.notify('No pending changes', severity='warning')
             return
-        # ReviewScreen is pushed in Phase E — until then, just a notify.
-        self.notify(f'{self._queue().count} pending change(s) — review coming')
+        from op.tui.review_screen import ReviewScreen
+
+        self.app.push_screen(
+            ReviewScreen(config=self.config, client=self.client)
+        )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.row_key.value is None:
