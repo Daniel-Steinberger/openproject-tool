@@ -70,7 +70,6 @@ class DetailScreen(Screen[None]):
         dock: bottom;
         height: 1;
         background: cyan;
-        color: black;
         display: none;
     }
     DetailScreen #search-bar.visible {
@@ -86,6 +85,14 @@ class DetailScreen(Screen[None]):
     }
     DetailScreen #search-input:focus {
         border: none;
+        background: cyan;
+    }
+    DetailScreen #search-input > .input--cursor {
+        background: black;
+        color: cyan;
+    }
+    DetailScreen #search-input > .input--placeholder {
+        color: black 70%;
     }
     DetailScreen #search-status {
         width: auto;
@@ -324,6 +331,10 @@ class DetailScreen(Screen[None]):
         bar = self.query_one('#search-bar', Horizontal)
         if 'visible' not in bar.classes:
             bar.add_class('visible')
+        try:
+            self.query_one(Footer).display = False
+        except Exception:  # noqa: BLE001
+            pass
         input_ = self.query_one('#search-input', Input)
         input_.value = ''
         input_.focus()
@@ -335,6 +346,10 @@ class DetailScreen(Screen[None]):
         # Hide bar, return focus to content so the list is scrollable again
         bar = self.query_one('#search-bar', Horizontal)
         bar.remove_class('visible')
+        try:
+            self.query_one(Footer).display = True
+        except Exception:  # noqa: BLE001
+            pass
         self._content_scroll().focus()
 
     def _run_search(self, pattern: str) -> None:
