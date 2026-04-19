@@ -90,6 +90,36 @@ class TestLoadRemoteData:
         assert cfg.remote.users == {5: 'Max', 6: 'Anna'}
         assert cfg.remote.custom_fields == {3: 'Story Points'}
 
+    async def test_skips_endpoint_returning_404(
+        self, tmp_path: Path, respx_mock: respx.MockRouter
+    ) -> None:
+        """A missing endpoint (e.g. /custom_fields on older OP installs) must not abort sync."""
+        config_path = tmp_path / 'config.toml'
+
+        respx_mock.get(f'{BASE_URL}/api/v3/statuses').mock(
+            return_value=httpx.Response(
+                200, json=_collection([{'_type': 'Status', 'id': 1, 'name': 'Neu'}])
+            )
+        )
+        for ep in ('types', 'priorities', 'projects', 'users'):
+            respx_mock.get(f'{BASE_URL}/api/v3/{ep}').mock(
+                return_value=httpx.Response(200, json=_collection([]))
+            )
+        # custom_fields returns 404 — must be tolerated
+        respx_mock.get(f'{BASE_URL}/api/v3/custom_fields').mock(
+            return_value=httpx.Response(
+                404,
+                json={'_type': 'Error', 'message': 'Not found'},
+            )
+        )
+
+        async with OpenProjectClient(BASE_URL, API_KEY) as client:
+            await load_remote_data(client, config_path)
+
+        cfg = load_config(config_path)
+        assert cfg.remote.statuses == {1: 'Neu'}
+        assert cfg.remote.custom_fields == {}
+
     async def test_preserves_existing_connection_and_defaults(
         self, tmp_path: Path, respx_mock: respx.MockRouter
     ) -> None:

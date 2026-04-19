@@ -60,6 +60,20 @@ class TestAuth:
             with pytest.raises(OpenProjectError):
                 await client.get_statuses()
 
+    async def test_error_message_contains_method_and_url(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/priorities').mock(
+            return_value=httpx.Response(404, json={'message': 'not found'})
+        )
+        async with client:
+            with pytest.raises(OpenProjectError) as excinfo:
+                await client.get_priorities()
+        message = str(excinfo.value)
+        assert 'GET' in message
+        assert '/api/v3/priorities' in message
+        assert '404' in message
+
 
 class TestMetadataEndpoints:
     async def test_get_statuses(
