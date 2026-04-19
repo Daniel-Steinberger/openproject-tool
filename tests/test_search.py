@@ -97,6 +97,17 @@ class TestDefaults:
         assert q.filters == {}
         assert q.words == []
 
+    def test_tracks_default_keys(self) -> None:
+        defaults = DefaultsConfig(status=['open'], type=['Task'])
+        q = parse(['type=bug'], defaults=defaults)
+        # 'type' was explicit, 'status' came from defaults
+        assert q.default_filter_keys == {'status'}
+
+    def test_all_filters_explicit_no_default_keys(self) -> None:
+        defaults = DefaultsConfig(status=['open'], type=['Task'])
+        q = parse(['type=bug', 'status=*'], defaults=defaults)
+        assert q.default_filter_keys == set()
+
 
 class TestEdgeCases:
     def test_empty_input(self) -> None:
@@ -184,6 +195,42 @@ class TestBuildApiFilters:
         remote = RemoteConfig(types={1: 'Task'})
         q = SearchQuery(filters={'type': ['wut']})
         with pytest.raises(ValueError, match='type'):
+            build_api_filters(q, remote)
+
+    def test_unknown_value_message_lists_valid_values(self) -> None:
+        remote = RemoteConfig(types={1: 'Task', 2: 'Bug'})
+        q = SearchQuery(filters={'type': ['Feature']})
+        with pytest.raises(ValueError) as excinfo:
+            build_api_filters(q, remote)
+        message = str(excinfo.value)
+        assert 'Feature' in message
+        assert 'Task' in message
+        assert 'Bug' in message
+
+    def test_default_filter_drops_unresolved_values(self) -> None:
+        """Default values that don't resolve must not crash — only the missing values are dropped."""
+        remote = RemoteConfig(types={1: 'Task', 2: 'Bug'})
+        q = SearchQuery(
+            filters={'type': ['Task', 'Feature', 'Bug']},
+            default_filter_keys={'type'},
+        )
+        assert build_api_filters(q, remote) == [
+            {'type_id': {'operator': '=', 'values': ['1', '2']}}
+        ]
+
+    def test_default_filter_with_all_unresolved_is_dropped(self) -> None:
+        remote = RemoteConfig(types={1: 'Task'})
+        q = SearchQuery(
+            filters={'type': ['Feature', 'Epic']},
+            default_filter_keys={'type'},
+        )
+        assert build_api_filters(q, remote) == []
+
+    def test_explicit_filter_still_raises_on_unknown(self) -> None:
+        """An explicit user input (not from defaults) must still error hard."""
+        remote = RemoteConfig(types={1: 'Task'})
+        q = SearchQuery(filters={'type': ['Feature']}, default_filter_keys=set())
+        with pytest.raises(ValueError):
             build_api_filters(q, remote)
 
     def test_words_add_subject_contains_filters(self) -> None:
