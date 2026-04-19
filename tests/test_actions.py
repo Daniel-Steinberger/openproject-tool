@@ -136,10 +136,13 @@ class TestLoadRemoteData:
             'type = ["Task"]\n'
         )
 
-        for ep in ('statuses', 'types', 'priorities', 'projects', 'users', 'custom_fields'):
+        for ep in ('statuses', 'types', 'priorities', 'projects', 'users'):
             respx_mock.get(f'{BASE_URL}/api/v3/{ep}').mock(
                 return_value=httpx.Response(200, json=_collection([]))
             )
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
+            return_value=httpx.Response(200, json=_collection([]))
+        )
 
         async with OpenProjectClient(BASE_URL, API_KEY) as client:
             await load_remote_data(client, config_path)

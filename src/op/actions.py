@@ -13,16 +13,23 @@ log = logging.getLogger(__name__)
 async def load_remote_data(client: OpenProjectClient, config_path: Path) -> None:
     """Fetch metadata in parallel and write it to the `[remote.*]` config sections.
 
-    Endpoints missing on the target OpenProject instance (HTTP 404) are skipped
-    with a warning — the remaining metadata is still synced.
+    Custom-fields require the project + type lists to build a schema filter, so they
+    are loaded in a second pass after the primary metadata. Missing endpoints
+    (HTTP 404) are skipped with a warning — remaining metadata is still synced.
     """
-    statuses, types, priorities, projects, users, custom_fields = await asyncio.gather(
+    statuses, types, priorities, projects, users = await asyncio.gather(
         _safe_fetch('statuses', client.get_statuses),
         _safe_fetch('types', client.get_types),
         _safe_fetch('priorities', client.get_priorities),
         _safe_fetch('projects', client.get_projects),
         _safe_fetch('users', client.get_users),
-        _safe_fetch('custom_fields', client.get_custom_fields),
+    )
+    custom_fields = await _safe_fetch(
+        'custom_fields',
+        lambda: client.get_custom_fields(
+            project_ids=[p.id for p in projects],
+            type_ids=[t.id for t in types],
+        ),
     )
     update_remote(
         config_path,

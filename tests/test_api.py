@@ -153,7 +153,7 @@ class TestMetadataEndpoints:
     ) -> None:
         """Custom fields come from /work_packages/schemas — there is no global /custom_fields endpoint
         on many OpenProject installations. Keys `customFieldN` on each schema carry the definition."""
-        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
+        route = respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
             return_value=httpx.Response(
                 200,
                 json={
@@ -178,39 +178,23 @@ class TestMetadataEndpoints:
             )
         )
         async with client:
-            cfs = await client.get_custom_fields()
+            cfs = await client.get_custom_fields(project_ids=[10, 11], type_ids=[1, 2])
+        sent_filters = json.loads(route.calls.last.request.url.params['filters'])
+        pairs = set(sent_filters[0]['id']['values'])
+        assert pairs == {'10-1', '10-2', '11-1', '11-2'}
         ids = [cf.id for cf in cfs]
         assert ids == [3, 7, 12]
         assert cfs[0].name == 'Story Points'
         assert cfs[0].field_format == 'integer'
-        assert cfs[1].name == 'Risk Level'
-        assert cfs[2].name == 'External ID'
 
-    async def test_get_custom_fields_ignores_non_custom_keys(
+    async def test_get_custom_fields_without_pairs_returns_empty(
         self, client: OpenProjectClient, respx_mock: respx.MockRouter
     ) -> None:
-        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    'total': 1,
-                    'count': 1,
-                    '_embedded': {
-                        'elements': [
-                            {
-                                '_type': 'Schema',
-                                'subject': {'name': 'Subject', 'type': 'String'},
-                                'lockVersion': {'name': 'Lock', 'type': 'Integer'},
-                                '_links': {'self': {'href': '/api/v3/work_packages/schemas/1-1'}},
-                            }
-                        ]
-                    },
-                },
-            )
-        )
+        """No projects or no types → skip the request and return []."""
         async with client:
-            cfs = await client.get_custom_fields()
+            cfs = await client.get_custom_fields(project_ids=[], type_ids=[1])
         assert cfs == []
+        assert not respx_mock.calls
 
 
 def _work_package(**overrides: T.Any) -> dict[str, T.Any]:

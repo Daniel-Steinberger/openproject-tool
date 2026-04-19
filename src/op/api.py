@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 import typing as T
 
 import httpx
@@ -20,6 +21,8 @@ from op.models import (
 
 _API_BASE = '/api/v3'
 _DEFAULT_PAGE_SIZE = 100
+_CUSTOM_FIELD_KEY = re.compile(r'^customField(\d+)$')
+_SCHEMA_PAIR_BATCH = 200  # keep URL below ~4 KB
 
 
 class OpenProjectError(Exception):
@@ -78,9 +81,46 @@ class OpenProjectClient:
         elements = await self._get_collection('/users')
         return [User.from_api(e) for e in elements]
 
-    async def get_custom_fields(self) -> list[CustomField]:
-        elements = await self._get_collection('/custom_fields')
-        return [CustomField.from_api(e) for e in elements]
+    async def get_custom_fields(
+        self, *, project_ids: list[int], type_ids: list[int]
+    ) -> list[CustomField]:
+        """Derive custom-field definitions from /work_packages/schemas.
+
+        The schemas endpoint is mandatory-filtered by `project-id : type-id` pairs, so the caller
+        must supply known project and type IDs. Pair lists exceeding `_SCHEMA_PAIR_BATCH` are
+        split across multiple parallel requests to stay under typical nginx URL limits.
+        When either list is empty, no request is sent and `[]` is returned.
+        """
+        if not project_ids or not type_ids:
+            return []
+        pairs = [f'{p}-{t}' for p in project_ids for t in type_ids]
+        batches = [
+            pairs[i : i + _SCHEMA_PAIR_BATCH]
+            for i in range(0, len(pairs), _SCHEMA_PAIR_BATCH)
+        ]
+        responses = await asyncio.gather(*(self._fetch_schema_batch(b) for b in batches))
+        seen: dict[int, CustomField] = {}
+        for elements in responses:
+            for schema in elements:
+                for key, value in schema.items():
+                    match = _CUSTOM_FIELD_KEY.match(key)
+                    if not match or not isinstance(value, dict):
+                        continue
+                    field_id = int(match.group(1))
+                    if field_id in seen:
+                        continue
+                    seen[field_id] = CustomField(
+                        id=field_id,
+                        name=value.get('name', f'Custom Field {field_id}'),
+                        field_format=str(value.get('type', '')).lower(),
+                    )
+        return [seen[k] for k in sorted(seen)]
+
+    async def _fetch_schema_batch(self, pairs: list[str]) -> list[dict[str, T.Any]]:
+        filters = [{'id': {'operator': '=', 'values': pairs}}]
+        params = {'filters': json.dumps(filters), 'pageSize': str(_DEFAULT_PAGE_SIZE)}
+        data = await self._request('GET', '/work_packages/schemas', params=params)
+        return list(data['_embedded']['elements'])
 
     # --- work packages ----------------------------------------------------
 
