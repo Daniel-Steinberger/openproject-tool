@@ -238,7 +238,6 @@ class TestSearch:
                 lock_version=1, description='Alpha beta gamma delta',
             ),
             tasks[1],
-            tasks[2],
         ]
         app = OpApp(tasks=custom, config=_config(), client=ClientWithBeta())
         async with app.run_test() as pilot:
@@ -273,7 +272,6 @@ class TestSearch:
                 lock_version=1, description='foo bar',
             ),
             tasks[1],
-            tasks[2],
         ]
         app = OpApp(tasks=custom, config=_config(), client=ClientWithHits())
         async with app.run_test() as pilot:

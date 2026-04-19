@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import re
 import typing as T
 import webbrowser
 
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Label, Markdown
+from textual.widgets import Footer, Header, Input, Label, Markdown
 
 from op.config import Config
 from op.models import Activity, WorkPackage
@@ -28,6 +29,11 @@ class DetailScreen(Screen[None]):
         Binding('space', 'page_down', 'Page Down', show=False),
         Binding('greater_than_sign', 'scroll_end', 'End', show=False),
         Binding('less_than_sign', 'scroll_home', 'Home', show=False),
+        # Less-style search
+        Binding('slash', 'search_forward', 'Search', show=True),
+        Binding('question_mark', 'search_backward', 'Search back', show=False),
+        Binding('n', 'search_next', 'Next match', show=True),
+        Binding('N', 'search_prev', 'Prev match', show=False),
     ]
 
     DEFAULT_CSS = """
@@ -59,6 +65,25 @@ class DetailScreen(Screen[None]):
         padding: 0 2;
         color: $text-muted;
     }
+    DetailScreen #search-bar {
+        dock: bottom;
+        height: 1;
+        display: none;
+    }
+    DetailScreen #search-bar.visible {
+        display: block;
+    }
+    DetailScreen #search-input {
+        width: 1fr;
+    }
+    DetailScreen #search-status {
+        width: auto;
+        padding: 0 1;
+        color: $text-muted;
+    }
+    DetailScreen .search-hit-current {
+        border: round $warning;
+    }
     """
 
     def __init__(
@@ -73,6 +98,12 @@ class DetailScreen(Screen[None]):
         self.config = config
         self.client = client
         self._activities: list[Activity] = []
+        # Search state
+        self._activity_widgets: list[tuple[Markdown, str]] = []
+        self._search_hits: list[Markdown] = []
+        self._current_hit: int = -1
+        self._total_matches: int = 0
+        self._search_direction: T.Literal['forward', 'backward'] = 'forward'
 
     def compose(self):  # noqa: ANN201
         yield Header()
@@ -82,6 +113,9 @@ class DetailScreen(Screen[None]):
                 yield Markdown(self.wp.description, id='description')
             yield Label('Activity', id='activity-header')
             yield Vertical(id='activities')
+        with Horizontal(id='search-bar'):
+            yield Input(placeholder='pattern', id='search-input')
+            yield Label('', id='search-status')
         yield Footer()
 
     def on_mount(self) -> None:
@@ -104,6 +138,7 @@ class DetailScreen(Screen[None]):
         await container.remove_children()
 
         widgets: list = []
+        self._activity_widgets = []
         for activity in self._activities:
             if not activity.comment:
                 continue
@@ -115,7 +150,9 @@ class DetailScreen(Screen[None]):
                     classes='activity-head',
                 )
             )
-            widgets.append(Markdown(activity.comment))
+            md = Markdown(activity.comment)
+            self._activity_widgets.append((md, activity.comment))
+            widgets.append(md)
         if not widgets:
             widgets.append(Label('(no comments)', id='activities-empty'))
         await container.mount(*widgets)
@@ -229,6 +266,106 @@ class DetailScreen(Screen[None]):
 
     def _content_scroll(self) -> VerticalScroll:
         return self.query_one(VerticalScroll)
+
+    # --- less-style search ---
+
+    def action_search_forward(self) -> None:
+        self._search_direction = 'forward'
+        self._open_search_input()
+
+    def action_search_backward(self) -> None:
+        self._search_direction = 'backward'
+        self._open_search_input()
+
+    def action_search_next(self) -> None:
+        self._advance_hit(+1 if self._search_direction == 'forward' else -1)
+
+    def action_search_prev(self) -> None:
+        self._advance_hit(-1 if self._search_direction == 'forward' else +1)
+
+    def _open_search_input(self) -> None:
+        bar = self.query_one('#search-bar', Horizontal)
+        if 'visible' not in bar.classes:
+            bar.add_class('visible')
+        input_ = self.query_one('#search-input', Input)
+        input_.value = ''
+        input_.focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != 'search-input':
+            return
+        self._run_search(event.value)
+        # Hide bar, return focus to content so the list is scrollable again
+        bar = self.query_one('#search-bar', Horizontal)
+        bar.remove_class('visible')
+        self._content_scroll().focus()
+
+    def _run_search(self, pattern: str) -> None:
+        self._clear_search_marks()
+        if not pattern:
+            self._search_hits = []
+            self._total_matches = 0
+            self._current_hit = -1
+            self._update_search_status()
+            return
+        try:
+            regex = re.compile(pattern, re.IGNORECASE)
+        except re.error:
+            regex = re.compile(re.escape(pattern), re.IGNORECASE)
+
+        total = 0
+        hits: list[Markdown] = []
+        for widget, text in self._searchable_blocks():
+            matches = len(regex.findall(text))
+            if matches:
+                hits.append(widget)
+                total += matches
+        self._search_hits = hits
+        self._total_matches = total
+        self._current_hit = 0 if hits else -1
+        self._focus_hit()
+        self._update_search_status()
+
+    def _searchable_blocks(self) -> list[tuple[Markdown, str]]:
+        blocks: list[tuple[Markdown, str]] = []
+        if self.wp.description:
+            try:
+                blocks.append(
+                    (self.query_one('#description', Markdown), self.wp.description)
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        blocks.extend(self._activity_widgets)
+        return blocks
+
+    def _advance_hit(self, delta: int) -> None:
+        if not self._search_hits:
+            return
+        self._current_hit = (self._current_hit + delta) % len(self._search_hits)
+        self._focus_hit()
+        self._update_search_status()
+
+    def _focus_hit(self) -> None:
+        self._clear_search_marks()
+        if not self._search_hits or self._current_hit < 0:
+            return
+        widget = self._search_hits[self._current_hit]
+        widget.add_class('search-hit-current')
+        widget.scroll_visible(animate=False)
+
+    def _clear_search_marks(self) -> None:
+        for widget in self.query('.search-hit-current'):
+            widget.remove_class('search-hit-current')
+
+    def _update_search_status(self) -> None:
+        label = self.query_one('#search-status', Label)
+        if self._total_matches == 0:
+            label.update('no matches' if self._search_hits is not None else '')
+            return
+        label.update(
+            f'match {self._current_hit + 1}/{len(self._search_hits)} '
+            f'({self._total_matches} total)'
+        )
 
     def action_open_browser(self) -> None:
         base_url = self.config.connection.base_url.rstrip('/')
