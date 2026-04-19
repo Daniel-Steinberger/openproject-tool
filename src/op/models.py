@@ -52,13 +52,16 @@ class Project(_ApiModel):
     id: int
     name: str
     identifier: str | None = None
+    parent_id: int | None = None
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> Project:
+        links = payload.get('_links') or {}
         return cls(
             id=payload['id'],
             name=payload['name'],
             identifier=payload.get('identifier'),
+            parent_id=_link_id(links, 'parent'),
         )
 
 

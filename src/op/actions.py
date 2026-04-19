@@ -38,6 +38,7 @@ async def load_remote_data(client: OpenProjectClient, config_path: Path) -> None
         types={t.id: t.name for t in types},
         priorities={p.id: p.name for p in priorities},
         projects={p.id: p.name for p in projects},
+        project_parents={p.id: p.parent_id for p in projects if p.parent_id is not None},
         users={u.id: u.name for u in users},
         groups={g.id: g.name for g in groups},
         custom_fields={cf.id: cf.name for cf in custom_fields},

@@ -39,6 +39,14 @@ type = ["Task", "Bug", "Feature"]
 # file = "/path/to/op.log"
 
 
+[filter]
+# Project filter — hide tasks that belong to projects you aren't interested in.
+# Both values are auto-maintained by the TUI (hotkey `p` toggles, project
+# selector dialog edits the list).
+# irrelevant_projects = [10, 11]
+# project_filter_active = false
+
+
 [remote]
 # This section is auto-populated by: op --load-remote-data
 # Do not edit manually — your changes will be overwritten.
@@ -76,7 +84,13 @@ class RemoteConfig(BaseModel):
     users: dict[int, str] = Field(default_factory=dict)
     groups: dict[int, str] = Field(default_factory=dict)
     projects: dict[int, str] = Field(default_factory=dict)
+    project_parents: dict[int, int] = Field(default_factory=dict)
     custom_fields: dict[int, str] = Field(default_factory=dict)
+
+
+class FilterConfig(BaseModel):
+    irrelevant_projects: list[int] = Field(default_factory=list)
+    project_filter_active: bool = False
 
 
 class LoggingConfig(BaseModel):
@@ -89,6 +103,7 @@ class Config(BaseModel):
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     remote: RemoteConfig = Field(default_factory=RemoteConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    filter: FilterConfig = Field(default_factory=FilterConfig)
 
 
 def default_config_path() -> Path:
@@ -126,6 +141,7 @@ def update_remote(
     users: dict[int, str] | None = None,
     groups: dict[int, str] | None = None,
     projects: dict[int, str] | None = None,
+    project_parents: dict[int, int] | None = None,
     custom_fields: dict[int, str] | None = None,
 ) -> None:
     """Replace the given remote subtables in-place, preserving comments and unrelated sections."""
@@ -143,6 +159,7 @@ def update_remote(
         'users': users,
         'groups': groups,
         'projects': projects,
+        'project_parents': project_parents,
         'custom_fields': custom_fields,
     }
     for name, values in updates.items():
@@ -156,10 +173,36 @@ def update_remote(
     path.write_text(tomlkit.dumps(doc))
 
 
+def update_filter(
+    path: Path,
+    *,
+    irrelevant_projects: list[int] | None = None,
+    project_filter_active: bool | None = None,
+) -> None:
+    """Persist the project-filter state to the `[filter]` section."""
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_DEFAULT_CONFIG_TEMPLATE)
+
+    doc = tomlkit.parse(path.read_text())
+    filter_table = doc.setdefault('filter', tomlkit.table())
+
+    if irrelevant_projects is not None:
+        arr = tomlkit.array()
+        for pid in irrelevant_projects:
+            arr.append(pid)
+        filter_table['irrelevant_projects'] = arr
+    if project_filter_active is not None:
+        filter_table['project_filter_active'] = project_filter_active
+
+    path.write_text(tomlkit.dumps(doc))
+
+
 def _normalise(data: dict[str, T.Any]) -> dict[str, T.Any]:
     """Ensure all expected top-level sections exist for Pydantic validation."""
     data.setdefault('connection', {})
     data.setdefault('defaults', {})
     data.setdefault('remote', {})
     data.setdefault('logging', {})
+    data.setdefault('filter', {})
     return data
