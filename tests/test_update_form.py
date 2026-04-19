@@ -66,6 +66,48 @@ class TestAssignee:
         }
 
 
+class TestScalarFields:
+    def test_set_subject(self) -> None:
+        form = UpdateForm()
+        form.subject = 'Neuer Titel'
+        assert form.api_changes() == {'subject': 'Neuer Titel'}
+
+    def test_set_description(self) -> None:
+        form = UpdateForm()
+        form.description = 'Ausführlicher Text'
+        assert form.api_changes() == {
+            'description': {'raw': 'Ausführlicher Text', 'format': 'markdown'}
+        }
+
+    def test_set_start_date(self) -> None:
+        form = UpdateForm()
+        form.start_date = '2026-05-01'
+        assert form.api_changes() == {'startDate': '2026-05-01'}
+
+    def test_set_due_date(self) -> None:
+        form = UpdateForm()
+        form.due_date = '2026-05-31'
+        assert form.api_changes() == {'dueDate': '2026-05-31'}
+
+    def test_empty_string_clears_subject(self) -> None:
+        form = UpdateForm()
+        form.subject = 'abc'
+        form.subject = ''
+        assert form.api_changes() == {}
+
+    def test_all_scalar_and_link_fields_together(self) -> None:
+        form = UpdateForm()
+        form.status_id = 2
+        form.subject = 'T'
+        form.description = 'Desc'
+        form.start_date = '2026-01-01'
+        changes = form.api_changes()
+        assert changes['subject'] == 'T'
+        assert changes['description'] == {'raw': 'Desc', 'format': 'markdown'}
+        assert changes['startDate'] == '2026-01-01'
+        assert changes['_links']['status'] == {'href': '/api/v3/statuses/2'}
+
+
 class TestCombined:
     def test_all_fields_at_once(self) -> None:
         form = UpdateForm()

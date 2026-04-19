@@ -153,3 +153,58 @@ class TestApply:
             await pilot.press('g')
             await pilot.pause()
         assert client.updates == []
+
+
+class TestSingleTaskAllFields:
+    async def test_single_edit_shows_scalar_inputs(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """When opened for a single task, subject/description/dates must be editable."""
+        from textual.widgets import Input, TextArea
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            # No selection → target = cursor row (task 1)
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            # Scalar inputs must exist with prefilled values from the task.
+            assert modal.query_one('#input-subject', Input).value == 'Erstes'
+            assert modal.query_one('#ta-description', TextArea) is not None
+
+    async def test_single_edit_submits_subject_change(
+        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-subject', Input).value = 'Neuer Titel'
+            await pilot.press('g')
+            await pilot.pause()
+        assert len(client.updates) == 1
+        wp_id, _lock, changes = client.updates[0]
+        assert wp_id == 1
+        assert changes == {'subject': 'Neuer Titel'}
+
+    async def test_batch_edit_hides_scalar_inputs(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Multiple selected tasks → only link fields, no subject/description."""
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('space')
+            await pilot.press('down')
+            await pilot.press('space')
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            # Scalar inputs must NOT be present
+            assert not modal.query('#input-subject')
+            assert not modal.query('#ta-description')

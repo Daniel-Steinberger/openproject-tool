@@ -114,7 +114,12 @@ class MainScreen(Screen[None]):
         target_ids = self._target_ids()
         if not target_ids:
             return
-        modal = UpdateModal(remote=self.config.remote, target_count=len(target_ids))
+        single_wp = self._tasks_by_id.get(target_ids[0]) if len(target_ids) == 1 else None
+        modal = UpdateModal(
+            remote=self.config.remote,
+            target_count=len(target_ids),
+            wp=single_wp,
+        )
 
         async def _apply(form: UpdateForm | None) -> None:
             if form is None or self.client is None:
