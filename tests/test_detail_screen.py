@@ -196,6 +196,136 @@ class TestEdit:
         assert op.form.status_id == 2
 
 
+class TestSearch:
+    @pytest.fixture
+    def wp_with_long_desc(self) -> WorkPackage:
+        return WorkPackage(
+            id=1,
+            subject='Search-Demo',
+            description=(
+                'Alpha beta gamma.\n'
+                '\n'
+                'A second paragraph mentions beta again.'
+            ),
+            type_id=1,
+            type_name='Task',
+            status_id=1,
+            status_name='Neu',
+            project_id=10,
+            project_name='W',
+            lock_version=1,
+        )
+
+    async def test_run_search_counts_matches_across_description_and_comments(
+        self, tasks: list
+    ) -> None:
+        class ClientWithBeta:
+            async def get_activities(self, wp_id):  # noqa: ANN001, ANN202
+                return [
+                    Activity(id=1, comment='Das Beta Release!', user_name='X'),
+                    Activity(id=2, comment='ohne Treffer', user_name='Y'),
+                    Activity(id=3, comment='noch ein beta Hinweis', user_name='Z'),
+                ]
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        # Replace task 1 with one that has a description mentioning beta
+        custom = [
+            WorkPackage(
+                id=1, subject='s', type_id=1, type_name='Task',
+                status_id=1, status_name='Neu', project_id=10, project_name='W',
+                lock_version=1, description='Alpha beta gamma delta',
+            ),
+            tasks[1],
+            tasks[2],
+        ]
+        app = OpApp(tasks=custom, config=_config(), client=ClientWithBeta())
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            screen = app.screen
+            screen._run_search('beta')
+            # 1 match in description + 2 matches in activity comments = 3
+            assert screen._total_matches == 3
+            assert len(screen._search_hits) == 3
+
+    async def test_search_next_and_prev_navigate(
+        self, tasks: list
+    ) -> None:
+        class ClientWithHits:
+            async def get_activities(self, wp_id):  # noqa: ANN001, ANN202
+                return [
+                    Activity(id=1, comment='foo', user_name='X'),
+                    Activity(id=2, comment='foo again', user_name='Y'),
+                ]
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        custom = [
+            WorkPackage(
+                id=1, subject='s', type_id=1, type_name='Task',
+                status_id=1, status_name='Neu', project_id=10, project_name='W',
+                lock_version=1, description='foo bar',
+            ),
+            tasks[1],
+            tasks[2],
+        ]
+        app = OpApp(tasks=custom, config=_config(), client=ClientWithHits())
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            screen = app.screen
+            screen._run_search('foo')
+            assert screen._current_hit == 0
+            screen.action_search_next()
+            assert screen._current_hit == 1
+            screen.action_search_next()
+            assert screen._current_hit == 2
+            screen.action_search_next()
+            # wrap-around
+            assert screen._current_hit == 0
+            screen.action_search_prev()
+            assert screen._current_hit == 2
+
+    async def test_no_matches_yields_zero_and_empty_hits(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            screen = app.screen
+            screen._run_search('xyznonexistent')
+            assert screen._total_matches == 0
+            assert screen._search_hits == []
+
+    async def test_slash_opens_search_input(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('slash')
+            await pilot.pause()
+            input_ = app.screen.query_one('#search-input', Input)
+            assert input_.display is True
+            assert input_.has_focus
+
+
 class TestMarkdownActivities:
     async def test_each_activity_rendered_as_markdown(
         self, app_factory: T.Callable[..., OpApp]
