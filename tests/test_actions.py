@@ -63,19 +63,21 @@ class TestLoadRemoteData:
                 ),
             )
         )
-        respx_mock.get(f'{BASE_URL}/api/v3/custom_fields').mock(
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
             return_value=httpx.Response(
                 200,
-                json=_collection(
-                    [
-                        {
-                            '_type': 'CustomField',
-                            'id': 3,
-                            'name': 'Story Points',
-                            'fieldFormat': 'int',
-                        }
-                    ]
-                ),
+                json={
+                    'total': 1,
+                    'count': 1,
+                    '_embedded': {
+                        'elements': [
+                            {
+                                '_type': 'Schema',
+                                'customField3': {'name': 'Story Points', 'type': 'Integer'},
+                            }
+                        ]
+                    },
+                },
             )
         )
 
@@ -93,7 +95,7 @@ class TestLoadRemoteData:
     async def test_skips_endpoint_returning_404(
         self, tmp_path: Path, respx_mock: respx.MockRouter
     ) -> None:
-        """A missing endpoint (e.g. /custom_fields on older OP installs) must not abort sync."""
+        """A missing endpoint (e.g. /work_packages/schemas on older installs) must not abort sync."""
         config_path = tmp_path / 'config.toml'
 
         respx_mock.get(f'{BASE_URL}/api/v3/statuses').mock(
@@ -105,8 +107,8 @@ class TestLoadRemoteData:
             respx_mock.get(f'{BASE_URL}/api/v3/{ep}').mock(
                 return_value=httpx.Response(200, json=_collection([]))
             )
-        # custom_fields returns 404 — must be tolerated
-        respx_mock.get(f'{BASE_URL}/api/v3/custom_fields').mock(
+        # Custom-field schema endpoint returns 404 — must be tolerated
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
             return_value=httpx.Response(
                 404,
                 json={'_type': 'Error', 'message': 'Not found'},
