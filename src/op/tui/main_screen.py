@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from textual.binding import Binding
+from textual.screen import Screen
+from textual.widgets import DataTable, Footer, Header
+
+from op.config import Config
+from op.models import WorkPackage
+from op.tui.selection import Selection
+
+_COL_SEL = 'sel'
+_COL_ID = 'id'
+_COL_STATUS = 'status'
+_COL_TYPE = 'type'
+_COL_SUBJECT = 'subject'
+
+_MARK_SELECTED = '[x]'
+_MARK_UNSELECTED = '[ ]'
+
+
+class MainScreen(Screen[None]):
+    """Aptitude-style task list: cursor navigation, space-to-select, i-invert, q-quit."""
+
+    BINDINGS = [
+        Binding('space', 'toggle_selected', 'Toggle', show=True),
+        Binding('i', 'invert_selection', 'Invert', show=True),
+        Binding('q', 'quit', 'Quit', show=True),
+    ]
+
+    def __init__(self, *, tasks: list[WorkPackage], config: Config) -> None:
+        super().__init__()
+        self.tasks = tasks
+        self.config = config
+        self.selection = Selection()
+
+    def compose(self):  # noqa: ANN201 — Textual compose signature
+        yield Header()
+        yield DataTable(id='task-list', cursor_type='row', zebra_stripes=True)
+        yield Footer()
+
+    def on_mount(self) -> None:
+        table = self.query_one('#task-list', DataTable)
+        table.add_column('Sel', key=_COL_SEL, width=4)
+        table.add_column('ID', key=_COL_ID, width=10)
+        table.add_column('Status', key=_COL_STATUS, width=16)
+        table.add_column('Type', key=_COL_TYPE, width=10)
+        table.add_column('Subject', key=_COL_SUBJECT)
+        for task in self.tasks:
+            table.add_row(
+                _MARK_UNSELECTED,
+                f'OP#{task.id}',
+                task.status_name,
+                task.type_name,
+                task.subject,
+                key=str(task.id),
+            )
+        table.focus()
+
+    # --- actions ---------------------------------------------------------
+
+    def action_toggle_selected(self) -> None:
+        task_id = self._current_task_id()
+        if task_id is None:
+            return
+        self.selection.toggle(task_id)
+        self._refresh_mark(task_id)
+
+    def action_invert_selection(self) -> None:
+        self.selection.invert(all_ids=[t.id for t in self.tasks])
+        for task in self.tasks:
+            self._refresh_mark(task.id)
+
+    def action_quit(self) -> None:
+        self.app.exit()
+
+    # --- internals -------------------------------------------------------
+
+    def _current_task_id(self) -> int | None:
+        table = self.query_one('#task-list', DataTable)
+        if table.row_count == 0:
+            return None
+        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+        if row_key.value is None:
+            return None
+        return int(row_key.value)
+
+    def _refresh_mark(self, task_id: int) -> None:
+        marker = _MARK_SELECTED if self.selection.contains(task_id) else _MARK_UNSELECTED
+        table = self.query_one('#task-list', DataTable)
+        table.update_cell(str(task_id), _COL_SEL, marker)
