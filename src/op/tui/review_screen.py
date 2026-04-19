@@ -101,12 +101,14 @@ class ReviewScreen(Screen[None]):
         self.app.push_screen(modal, _on_dismiss)
 
     def action_apply_all(self) -> None:
-        """Apply all pending ops — opens the ApplyingScreen (added in Phase F).
+        """Apply all pending ops — open the ApplyingScreen."""
+        if self.app.pending_ops.count == 0:
+            self.app.pop_screen()
+            return
+        from op.tui.applying_screen import ApplyingScreen
 
-        For now this is a no-op placeholder so the binding exists.
-        """
-        self.notify(
-            f'Applying {self.app.pending_ops.count} change(s) — runner coming soon'
+        self.app.push_screen(
+            ApplyingScreen(config=self.config, client=self.client)
         )
 
     # --- internals -------------------------------------------------------
