@@ -8,6 +8,7 @@ from textual.widgets import DataTable, Footer, Header
 
 from op.config import Config
 from op.models import WorkPackage
+from op.tui.detail_screen import DetailScreen
 from op.tui.selection import Selection
 from op.tui.update_form import UpdateForm
 from op.tui.update_modal import UpdateModal
@@ -85,6 +86,15 @@ class MainScreen(Screen[None]):
 
     def action_quit(self) -> None:
         self.app.exit()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.row_key.value is None:
+            return
+        task_id = int(event.row_key.value)
+        wp = self._tasks_by_id.get(task_id)
+        if wp is None:
+            return
+        self.app.push_screen(DetailScreen(wp=wp, config=self.config, client=self.client))
 
     def action_update(self) -> None:
         target_ids = self._target_ids()
