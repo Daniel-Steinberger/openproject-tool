@@ -6,14 +6,9 @@ from op.tui.calendar_modal import CalendarModal, _shift_months
 
 
 def _mk(initial: date, busy: set[date] | None = None) -> CalendarModal:
-    """Create a CalendarModal and stub out its rendering side-effects for unit testing.
-
-    Navigation actions call `_render()`, which itself calls `query_one(...)`. Without
-    a mounted Textual screen that fails. Since the pure date logic is what we want to
-    verify, we simply replace `_render` with a no-op.
-    """
+    """Create a CalendarModal and stub out its rendering side-effects for unit testing."""
     modal = CalendarModal(initial=initial, busy_days=busy)
-    modal._render = lambda: None  # type: ignore[assignment]
+    modal._refresh_display = lambda: None  # type: ignore[assignment]
     return modal
 
 

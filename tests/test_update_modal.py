@@ -279,11 +279,35 @@ class TestDateShortcuts:
 
 
 class TestCalendarPopup:
-    """Calendar popup integration — tests the focus-detection and input target logic.
+    """Calendar popup integration — focus detection, push, and rendering survival."""
 
-    The two-deep ModalScreen rendering is buggy in this Textual version's pilot harness,
-    so we assert on `_focused_date_input()` rather than simulating push_screen.
-    """
+    async def test_calendar_can_be_pushed_and_rendered(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Regression test for #13: CalendarModal._render must NOT shadow Widget._render."""
+        from datetime import date
+
+        from textual.widgets import Input
+
+        from op.tui.calendar_modal import CalendarModal
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            update_modal = app.screen
+            assert isinstance(update_modal, UpdateModal)
+            update_modal.query_one('#input-start', Input).focus()
+            await pilot.pause()
+            # Push the calendar via the action — this used to crash with
+            # AttributeError: 'NoneType' object has no attribute 'render_strips'
+            await update_modal.action_pick_date()
+            await pilot.pause()
+            # If the rendering pipeline is intact, we should now be on a CalendarModal
+            assert isinstance(app.screen, CalendarModal)
+            # And a full frame render must not raise
+            assert app.screen.selected == date.today()
+
 
     async def test_focused_date_input_returns_start_when_start_focused(
         self, app_factory: T.Callable[..., OpApp]

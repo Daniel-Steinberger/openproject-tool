@@ -64,27 +64,27 @@ class CalendarModal(ModalScreen[date | None]):
 
     def action_prev_day(self) -> None:
         self.selected -= timedelta(days=1)
-        self._render()
+        self._refresh_display()
 
     def action_next_day(self) -> None:
         self.selected += timedelta(days=1)
-        self._render()
+        self._refresh_display()
 
     def action_prev_week(self) -> None:
         self.selected -= timedelta(days=7)
-        self._render()
+        self._refresh_display()
 
     def action_next_week(self) -> None:
         self.selected += timedelta(days=7)
-        self._render()
+        self._refresh_display()
 
     def action_prev_month(self) -> None:
         self.selected = _shift_months(self.selected, -1)
-        self._render()
+        self._refresh_display()
 
     def action_next_month(self) -> None:
         self.selected = _shift_months(self.selected, 1)
-        self._render()
+        self._refresh_display()
 
     def action_pick(self) -> None:
         self.dismiss(self.selected)
@@ -93,8 +93,11 @@ class CalendarModal(ModalScreen[date | None]):
         self.dismiss(None)
 
     # --- rendering -------------------------------------------------------
+    # NOTE: _do_not_ name this `_render` — Widget._render is a Textual internal
+    # that must return a Visual. Overriding it with a None-returning method
+    # breaks the entire render pipeline.
 
-    def _render(self) -> None:
+    def _refresh_display(self) -> None:
         self.query_one('#cal-header', Label).update(
             self.selected.strftime('%B %Y')
         )
