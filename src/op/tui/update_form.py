@@ -118,6 +118,38 @@ class UpdateForm:
     def has_changes(self) -> bool:
         return bool(self.api_changes())
 
+    def merge_from(self, other: UpdateForm) -> None:
+        """Fold `other` into this form — last-writer-wins per field.
+
+        Used when a task in the pending-queue gets re-edited: the second edit
+        doesn't replace the whole form, it overlays only the fields the user
+        touched this time.
+        """
+        if other._status_id is not None:
+            self._status_id = other._status_id
+        if other._type_id is not None:
+            self._type_id = other._type_id
+        if other._priority_id is not None:
+            self._priority_id = other._priority_id
+
+        # assignee: either side may switch between user-id and unassign-flag
+        if other._assignee_id is not None:
+            self._assignee_id = other._assignee_id
+            self._assignee_is_group = other._assignee_is_group
+            self._unassign = False
+        elif other._unassign:
+            self._unassign = True
+            self._assignee_id = None
+
+        if other._subject is not None:
+            self._subject = other._subject
+        if other._description is not None:
+            self._description = other._description
+        if other._start_date is not None:
+            self._start_date = other._start_date
+        if other._due_date is not None:
+            self._due_date = other._due_date
+
     def api_changes(self) -> dict[str, T.Any]:
         changes: dict[str, T.Any] = {}
 
