@@ -83,6 +83,73 @@ class TestLoadConfig:
         assert cfg.remote.statuses == {1: 'Neu', 2: 'In Bearbeitung'}
 
 
+class TestFilterConfig:
+    def test_default_filter_config(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        cfg = load_config(path)
+        assert cfg.filter.irrelevant_projects == []
+        assert cfg.filter.project_filter_active is False
+
+    def test_reads_filter_section(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text(
+            '[connection]\nbase_url = "x"\n\n'
+            '[filter]\n'
+            'irrelevant_projects = [10, 11, 12]\n'
+            'project_filter_active = true\n'
+        )
+        cfg = load_config(path)
+        assert cfg.filter.irrelevant_projects == [10, 11, 12]
+        assert cfg.filter.project_filter_active is True
+
+
+class TestUpdateFilter:
+    def test_save_filter_state(self, tmp_path: Path) -> None:
+        from op.config import update_filter
+
+        path = tmp_path / 'config.toml'
+        load_config(path)
+        update_filter(path, irrelevant_projects=[5, 7], project_filter_active=True)
+        cfg = load_config(path)
+        assert cfg.filter.irrelevant_projects == [5, 7]
+        assert cfg.filter.project_filter_active is True
+
+    def test_save_filter_preserves_other_sections(self, tmp_path: Path) -> None:
+        from op.config import update_filter
+
+        path = tmp_path / 'config.toml'
+        path.write_text(
+            '[connection]\nbase_url = "keep"\napi_key = "secret"\n\n'
+            '[defaults]\nstatus = ["open"]\n'
+        )
+        update_filter(path, irrelevant_projects=[1], project_filter_active=False)
+        cfg = load_config(path)
+        assert cfg.connection.base_url == 'keep'
+        assert cfg.connection.api_key == 'secret'
+        assert cfg.defaults.status == ['open']
+        assert cfg.filter.irrelevant_projects == [1]
+
+
+class TestProjectParents:
+    def test_default_empty(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        cfg = load_config(path)
+        assert cfg.remote.project_parents == {}
+
+    def test_reads_parent_mapping(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text(
+            '[connection]\nbase_url = "x"\n\n'
+            '[remote.project_parents]\n'
+            '10 = 3\n'
+            '11 = 3\n'
+        )
+        cfg = load_config(path)
+        assert cfg.remote.project_parents == {10: 3, 11: 3}
+
+
 class TestGetApiKey:
     def test_env_var_wins_over_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv('OP_API_KEY', 'env-key')

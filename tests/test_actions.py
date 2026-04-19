@@ -48,7 +48,17 @@ class TestLoadRemoteData:
             return_value=httpx.Response(
                 200,
                 json=_collection(
-                    [{'_type': 'Project', 'id': 10, 'name': 'Web', 'identifier': 'web'}]
+                    [
+                        {
+                            '_type': 'Project', 'id': 3, 'name': 'Root',
+                            'identifier': 'root',
+                        },
+                        {
+                            '_type': 'Project', 'id': 10, 'name': 'Web',
+                            'identifier': 'web',
+                            '_links': {'parent': {'href': '/api/v3/projects/3'}},
+                        },
+                    ]
                 ),
             )
         )
@@ -94,7 +104,8 @@ class TestLoadRemoteData:
         assert cfg.remote.statuses == {1: 'Neu', 2: 'Offen'}
         assert cfg.remote.types == {1: 'Task'}
         assert cfg.remote.priorities == {8: 'Normal'}
-        assert cfg.remote.projects == {10: 'Web'}
+        assert cfg.remote.projects == {3: 'Root', 10: 'Web'}
+        assert cfg.remote.project_parents == {10: 3}
         assert cfg.remote.users == {5: 'Max', 6: 'Anna'}
         assert cfg.remote.groups == {12: 'DevOps'}
         assert cfg.remote.custom_fields == {3: 'Story Points'}

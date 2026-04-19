@@ -129,6 +129,32 @@ class TestFromApi:
         payload = {'_type': 'Project', 'id': 10, 'name': 'Webportal', 'identifier': 'webportal'}
         assert Project.from_api(payload).identifier == 'webportal'
 
+    def test_project_from_api_extracts_parent_id(self) -> None:
+        payload = {
+            '_type': 'Project',
+            'id': 10,
+            'name': 'Sub',
+            'identifier': 'sub',
+            '_links': {'parent': {'href': '/api/v3/projects/3', 'title': 'Parent'}},
+        }
+        p = Project.from_api(payload)
+        assert p.parent_id == 3
+
+    def test_project_from_api_without_parent(self) -> None:
+        payload = {'_type': 'Project', 'id': 10, 'name': 'Root'}
+        p = Project.from_api(payload)
+        assert p.parent_id is None
+
+    def test_project_from_api_with_null_parent_href(self) -> None:
+        payload = {
+            '_type': 'Project',
+            'id': 10,
+            'name': 'Root',
+            '_links': {'parent': {'href': None}},
+        }
+        p = Project.from_api(payload)
+        assert p.parent_id is None
+
     def test_custom_field_from_api(self) -> None:
         payload = {
             '_type': 'CustomOption',
