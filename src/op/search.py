@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import typing as T
 from dataclasses import dataclass, field
 
-from op.config import DefaultsConfig
+from op.config import DefaultsConfig, RemoteConfig
 
-_ID_FILTER_KEYS = ('type', 'status', 'priority', 'project', 'assignee', 'author')
+_FILTER_KEY_MAP: dict[str, tuple[str, str]] = {
+    # user-facing key: (OpenProject filter key, RemoteConfig attribute)
+    'type': ('type_id', 'types'),
+    'status': ('status_id', 'statuses'),
+    'priority': ('priority_id', 'priorities'),
+    'project': ('project_id', 'projects'),
+    'assignee': ('assignee_id', 'users'),
+    'author': ('author_id', 'users'),
+}
 
 
 @dataclass
@@ -67,4 +76,39 @@ def _defaults_as_dict(defaults: DefaultsConfig) -> dict[str, list[str]]:
     return result
 
 
-__all__ = ['SearchQuery', 'parse', '_ID_FILTER_KEYS']
+def build_api_filters(
+    query: SearchQuery, remote: RemoteConfig
+) -> list[dict[str, T.Any]]:
+    """Translate a SearchQuery into the OpenProject filter-JSON array."""
+    api_filters: list[dict[str, T.Any]] = []
+
+    for word in query.words:
+        api_filters.append({'subject': {'operator': '~', 'values': [word]}})
+
+    for key, values in query.filters.items():
+        if key == 'status' and _is_meta_status(values):
+            api_filters.append({'status': {'operator': values[0].lower()[0]}})
+            continue
+        if key not in _FILTER_KEY_MAP:
+            raise ValueError(f'Unknown filter key: {key!r}')
+        op_key, remote_attr = _FILTER_KEY_MAP[key]
+        lookup: dict[int, str] = getattr(remote, remote_attr)
+        ids = [str(_resolve_name(key, v, lookup)) for v in values]
+        api_filters.append({op_key: {'operator': '=', 'values': ids}})
+
+    return api_filters
+
+
+def _is_meta_status(values: list[str]) -> bool:
+    return len(values) == 1 and values[0].lower() in ('open', 'closed')
+
+
+def _resolve_name(key: str, value: str, lookup: dict[int, str]) -> int:
+    needle = value.casefold()
+    for entity_id, name in lookup.items():
+        if name.casefold() == needle:
+            return entity_id
+    raise ValueError(f'Unknown {key} value: {value!r}')
+
+
+__all__ = ['SearchQuery', 'parse', 'build_api_filters']
