@@ -336,6 +336,51 @@ class TestWorkPackages:
         body = json.loads(route.calls.last.request.content)
         assert body == {'comment': {'raw': 'Hallo Welt'}}
 
+    async def test_get_busy_days_expands_ranges(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        """Each assigned WP with a start contributes all days in [start, due] to the busy set."""
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(
+            return_value=httpx.Response(
+                200,
+                json=_collection(
+                    [
+                        _work_package(
+                            id=1, subject='A', startDate='2026-05-04', dueDate='2026-05-05'
+                        ),
+                        _work_package(
+                            id=2, subject='B', startDate='2026-05-08', dueDate=None
+                        ),
+                        # Task without startDate is ignored
+                        _work_package(id=3, subject='C', startDate=None, dueDate=None),
+                    ]
+                ),
+            )
+        )
+        async with client:
+            busy = await client.get_busy_days(principal_id=42)
+        assert busy == {
+            # Range from task 1 (May 4-5 inclusive)
+            __import__('datetime').date(2026, 5, 4),
+            __import__('datetime').date(2026, 5, 5),
+            # Single day from task 2 (start only, no due)
+            __import__('datetime').date(2026, 5, 8),
+        }
+
+    async def test_get_busy_days_sends_correct_filter(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        route = respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(
+            return_value=httpx.Response(200, json=_collection([]))
+        )
+        async with client:
+            await client.get_busy_days(principal_id=42)
+        filters = json.loads(route.calls.last.request.url.params['filters'])
+        assignee_filter = next(f for f in filters if 'assigned_to_id' in f)
+        assert assignee_filter['assigned_to_id']['values'] == ['42']
+        status_filter = next(f for f in filters if 'status' in f)
+        assert status_filter['status']['operator'] == 'o'
+
     async def test_get_activities(
         self, client: OpenProjectClient, respx_mock: respx.MockRouter
     ) -> None:

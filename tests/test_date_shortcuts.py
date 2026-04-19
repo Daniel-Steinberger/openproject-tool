@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from op.date_shortcuts import parse_shortcut
+from op.date_shortcuts import next_free_day, parse_shortcut
 
 
 class TestLiterals:
@@ -101,3 +101,33 @@ class TestEdgeCases:
 
     def test_case_insensitive(self) -> None:
         assert parse_shortcut('TODAY', today=date(2026, 4, 19)) == date(2026, 4, 19)
+
+
+class TestNextFreeDay:
+    def test_returns_today_when_today_is_free_workday(self) -> None:
+        tuesday = date(2026, 4, 21)
+        assert next_free_day(tuesday, busy_days=set()) == tuesday
+
+    def test_skips_weekend(self) -> None:
+        saturday = date(2026, 4, 18)
+        assert next_free_day(saturday, busy_days=set()) == date(2026, 4, 20)
+
+    def test_skips_busy_day(self) -> None:
+        tuesday = date(2026, 4, 21)
+        assert next_free_day(tuesday, busy_days={tuesday}) == date(2026, 4, 22)
+
+    def test_skips_multiple_busy_days(self) -> None:
+        tuesday = date(2026, 4, 21)
+        busy = {tuesday, date(2026, 4, 22), date(2026, 4, 23)}
+        assert next_free_day(tuesday, busy_days=busy) == date(2026, 4, 24)
+
+    def test_skips_over_busy_week_end_into_next_monday(self) -> None:
+        friday = date(2026, 4, 24)
+        # Friday is busy → Mon (skip weekend)
+        assert next_free_day(friday, busy_days={friday}) == date(2026, 4, 27)
+
+    def test_busy_days_on_weekend_are_ignored(self) -> None:
+        """Saturday/Sunday are never free anyway — whether they're in busy_days is irrelevant."""
+        saturday = date(2026, 4, 18)
+        # Even if Sat is marked busy, we always skip weekend and check Mon
+        assert next_free_day(saturday, busy_days={saturday}) == date(2026, 4, 20)
