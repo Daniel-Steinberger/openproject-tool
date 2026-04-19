@@ -85,10 +85,11 @@ class OpenProjectClient:
     # --- work packages ----------------------------------------------------
 
     async def get_work_package(self, wp_id: int) -> WorkPackage | None:
-        response = await self._raw_request('GET', f'/work_packages/{wp_id}')
+        path = f'/work_packages/{wp_id}'
+        response = await self._raw_request('GET', path)
         if response.status_code == 404:
             return None
-        self._raise_for_status(response)
+        self._raise_for_status(response, 'GET', path)
         return WorkPackage.from_api(response.json())
 
     async def search_work_packages(
@@ -159,7 +160,7 @@ class OpenProjectClient:
 
     async def _request(self, method: str, path: str, **kwargs: T.Any) -> dict[str, T.Any]:
         response = await self._raw_request(method, path, **kwargs)
-        self._raise_for_status(response)
+        self._raise_for_status(response, method, path)
         return response.json()
 
     async def _raw_request(self, method: str, path: str, **kwargs: T.Any) -> httpx.Response:
@@ -168,10 +169,14 @@ class OpenProjectClient:
         return await self._http.request(method, f'{_API_BASE}{path}', **kwargs)
 
     @staticmethod
-    def _raise_for_status(response: httpx.Response) -> None:
+    def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:
         if response.status_code == 401:
-            raise AuthError('Authentication failed — check OP_API_KEY or config api_key')
+            raise AuthError(
+                f'Authentication failed for {method} {_API_BASE}{path} '
+                '— check OP_API_KEY or config api_key'
+            )
         if response.status_code >= 400:
             raise OpenProjectError(
-                f'OpenProject API error {response.status_code}: {response.text[:200]}'
+                f'{method} {_API_BASE}{path} returned {response.status_code}: '
+                f'{response.text[:200]}'
             )
