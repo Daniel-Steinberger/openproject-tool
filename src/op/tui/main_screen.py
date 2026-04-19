@@ -16,6 +16,7 @@ from op.tui.update_form import UpdateForm
 from op.tui.update_modal import UpdateModal
 
 _COL_SEL = 'sel'
+_COL_QUEUE = 'queue'
 _COL_ID = 'id'
 _COL_STATUS = 'status'
 _COL_TYPE = 'type'
@@ -29,13 +30,29 @@ def _selection_mark(selected: bool) -> Text:
     return Text('○', style='dim')
 
 
+def _queue_mark(count: int) -> Text:
+    if count == 0:
+        return Text('')
+    return Text(f'+{count}', style='bold yellow')
+
+
+def _count_changed_fields(form: UpdateForm) -> int:
+    changes = form.api_changes()
+    total = 0
+    if '_links' in changes:
+        total += len(changes['_links'])
+    total += sum(1 for k in changes if k != '_links')
+    return total
+
+
 class MainScreen(Screen[None]):
-    """Aptitude-style task list: cursor navigation, space-to-select, i-invert, q-quit."""
+    """Task selector: cursor navigation, space-to-select, u-edit-to-queue, g-review-queue."""
 
     BINDINGS = [
         Binding('space', 'toggle_selected', 'Toggle', show=True),
         Binding('i', 'invert_selection', 'Invert', show=True),
-        Binding('u', 'update', 'Update', show=True),
+        Binding('u', 'update', 'Edit', show=True),
+        Binding('g', 'review_queue', 'Apply', show=True),
         Binding('o', 'open_browser', 'Open', show=True),
         Binding('q', 'quit', 'Quit', show=True),
     ]
@@ -62,6 +79,7 @@ class MainScreen(Screen[None]):
     def on_mount(self) -> None:
         table = self.query_one('#task-list', DataTable)
         table.add_column('', key=_COL_SEL, width=3)
+        table.add_column('', key=_COL_QUEUE, width=3)
         table.add_column('ID', key=_COL_ID, width=10)
         table.add_column('Status', key=_COL_STATUS, width=16)
         table.add_column('Type', key=_COL_TYPE, width=10)
@@ -69,6 +87,7 @@ class MainScreen(Screen[None]):
         for task in self.tasks:
             table.add_row(
                 _selection_mark(False),
+                _queue_mark(0),
                 f'OP#{task.id}',
                 task.status_name,
                 task.type_name,
@@ -76,6 +95,7 @@ class MainScreen(Screen[None]):
                 key=str(task.id),
             )
         table.focus()
+        self._update_state_label()
 
     # --- actions ---------------------------------------------------------
 
@@ -101,6 +121,14 @@ class MainScreen(Screen[None]):
         base_url = self.config.connection.base_url.rstrip('/')
         webbrowser.open(f'{base_url}/work_packages/{task_id}')
 
+    def action_review_queue(self) -> None:
+        """Open the review screen — or notify if the queue is empty."""
+        if self._queue().count == 0:
+            self.notify('No pending changes', severity='warning')
+            return
+        # ReviewScreen is pushed in Phase E — until then, just a notify.
+        self.notify(f'{self._queue().count} pending change(s) — review coming')
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.row_key.value is None:
             return
@@ -115,66 +143,52 @@ class MainScreen(Screen[None]):
         if not target_ids:
             return
         single_wp = self._tasks_by_id.get(target_ids[0]) if len(target_ids) == 1 else None
+        # Pre-fill with any pending form already queued for this (single) task
         modal = UpdateModal(
             remote=self.config.remote,
             target_count=len(target_ids),
             wp=single_wp,
             client=self.client,
         )
+        if single_wp is not None:
+            pending = self._queue().get(single_wp.id)
+            if pending is not None:
+                modal.form.merge_from(pending.form)
 
-        async def _apply(form: UpdateForm | None) -> None:
-            if form is None:
+        def _on_dismiss(form: UpdateForm | None) -> None:
+            if form is None or not form.has_changes:
                 return
-            if self.client is None:
-                self.notify('No API client — changes not saved', severity='warning')
-                return
-            changes = form.api_changes()
-            if not changes:
-                self.notify('No changes to apply', severity='warning')
-                return
-            await self._apply_changes(list(target_ids), changes)
-
-        self.app.push_screen(modal, _apply)
-
-    async def _apply_changes(self, target_ids: list[int], changes: dict) -> None:
-        """Send PATCH requests for each target task and report the result to the user."""
-        updated = 0
-        for task_id in target_ids:
-            wp = self._tasks_by_id.get(task_id)
-            if wp is None:
-                continue
-            try:
-                fresh = await self.client.update_work_package(
-                    task_id, lock_version=wp.lock_version, changes=changes
+            for task_id in target_ids:
+                wp = self._tasks_by_id.get(task_id)
+                self._queue().add_or_merge(
+                    task_id,
+                    _clone_form(form),
+                    original_subject=wp.subject if wp else None,
                 )
-            except Exception as exc:  # noqa: BLE001 — surface any API error to the user
-                self.notify(
-                    f'OP#{task_id} update failed: {exc}',
-                    severity='error',
-                    timeout=8,
-                )
-                continue
-            updated += 1
-            if fresh is not None:
-                self._tasks_by_id[task_id] = fresh
-                self._refresh_row(task_id, fresh)
-        if updated:
-            target = (
-                f'OP#{target_ids[0]}' if updated == 1 else f'{updated} tasks'
-            )
-            self.notify(f'Updated {target}', severity='information')
+                self._refresh_queue_cell(task_id)
+            self._update_state_label()
 
-    def _refresh_row(self, task_id: int, wp: WorkPackage) -> None:
-        """Rewrite the Status / Type / Subject cells so the list reflects the server state."""
-        table = self.query_one('#task-list', DataTable)
-        try:
-            table.update_cell(str(task_id), _COL_STATUS, wp.status_name)
-            table.update_cell(str(task_id), _COL_TYPE, wp.type_name)
-            table.update_cell(str(task_id), _COL_SUBJECT, wp.subject)
-        except Exception:  # noqa: BLE001 — row may have been removed
-            pass
+        self.app.push_screen(modal, _on_dismiss)
 
     # --- internals -------------------------------------------------------
+
+    def _queue(self):  # noqa: ANN202
+        return self.app.pending_ops
+
+    def _update_state_label(self) -> None:
+        """Ask the app to re-render the sub-title with the current pending count."""
+        from op.tui.app import AppState
+
+        self.app.set_state(AppState.SELECTOR)
+
+    def _refresh_queue_cell(self, task_id: int) -> None:
+        pending = self._queue().get(task_id)
+        count = _count_changed_fields(pending.form) if pending else 0
+        table = self.query_one('#task-list', DataTable)
+        try:
+            table.update_cell(str(task_id), _COL_QUEUE, _queue_mark(count))
+        except Exception:  # noqa: BLE001
+            pass
 
     def _target_ids(self) -> list[int]:
         selected = self.selection.as_list()
@@ -196,3 +210,10 @@ class MainScreen(Screen[None]):
         marker = _selection_mark(self.selection.contains(task_id))
         table = self.query_one('#task-list', DataTable)
         table.update_cell(str(task_id), _COL_SEL, marker)
+
+
+def _clone_form(form: UpdateForm) -> UpdateForm:
+    """Return a fresh form with all fields of `form` merged in — avoids sharing state."""
+    clone = UpdateForm()
+    clone.merge_from(form)
+    return clone

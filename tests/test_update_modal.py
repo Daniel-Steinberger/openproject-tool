@@ -98,38 +98,36 @@ class TestOpenClose:
 
 
 class TestApply:
-    async def test_g_applies_to_selected_tasks(
-        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+    async def test_g_queues_change_for_selected_tasks(
+        self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         app = app_factory()
         async with app.run_test() as pilot:
-            # Select tasks 1 and 3 (cursor starts at 1; space, down, down, space)
-            await pilot.press('space')          # select 1
-            await pilot.press('down', 'down')   # cursor → 3
-            await pilot.press('space')          # select 3
-            await pilot.press('u')              # open modal
+            await pilot.press('space')
+            await pilot.press('down', 'down')
+            await pilot.press('space')
+            await pilot.press('u')
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            # Preset the form directly (selection dialog interaction is UI-heavy;
-            # we test the apply flow by setting the form state directly).
             modal.form.status_id = 2
             await pilot.press('g')
             await pilot.pause()
 
-        assert len(client.updates) == 2
-        updated_ids = {u[0] for u in client.updates}
-        assert updated_ids == {1, 3}
-        # All updates carry the status change.
-        for _id, _lock, changes in client.updates:
-            assert changes == {'_links': {'status': {'href': '/api/v3/statuses/2'}}}
+        assert app.pending_ops.count == 2
+        for task_id in (1, 3):
+            op = app.pending_ops.get(task_id)
+            assert op is not None
+            assert op.form.api_changes() == {
+                '_links': {'status': {'href': '/api/v3/statuses/2'}}
+            }
 
     async def test_g_falls_back_to_cursor_when_nothing_selected(
-        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+        self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         app = app_factory()
         async with app.run_test() as pilot:
-            await pilot.press('down')           # cursor → task 2
+            await pilot.press('down')
             await pilot.press('u')
             await pilot.pause()
             modal = app.screen
@@ -138,13 +136,15 @@ class TestApply:
             await pilot.press('g')
             await pilot.pause()
 
-        assert len(client.updates) == 1
-        wp_id, _, changes = client.updates[0]
-        assert wp_id == 2
-        assert changes == {'_links': {'status': {'href': '/api/v3/statuses/3'}}}
+        assert app.pending_ops.count == 1
+        op = app.pending_ops.get(2)
+        assert op is not None
+        assert op.form.api_changes() == {
+            '_links': {'status': {'href': '/api/v3/statuses/3'}}
+        }
 
     async def test_g_with_empty_form_is_noop(
-        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+        self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         app = app_factory()
         async with app.run_test() as pilot:
@@ -152,7 +152,7 @@ class TestApply:
             await pilot.pause()
             await pilot.press('g')
             await pilot.pause()
-        assert client.updates == []
+        assert app.pending_ops.count == 0
 
 
 class TestSingleTaskAllFields:
@@ -173,8 +173,8 @@ class TestSingleTaskAllFields:
             assert modal.query_one('#input-subject', Input).value == 'Erstes'
             assert modal.query_one('#ta-description', TextArea) is not None
 
-    async def test_single_edit_submits_subject_change(
-        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+    async def test_single_edit_queues_subject_change(
+        self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         from textual.widgets import Input
 
@@ -187,10 +187,9 @@ class TestSingleTaskAllFields:
             modal.query_one('#input-subject', Input).value = 'Neuer Titel'
             await pilot.press('g')
             await pilot.pause()
-        assert len(client.updates) == 1
-        wp_id, _lock, changes = client.updates[0]
-        assert wp_id == 1
-        assert changes == {'subject': 'Neuer Titel'}
+        op = app.pending_ops.get(1)
+        assert op is not None
+        assert op.form.api_changes() == {'subject': 'Neuer Titel'}
 
     async def test_batch_edit_hides_scalar_inputs(
         self, app_factory: T.Callable[..., OpApp]
@@ -212,7 +211,7 @@ class TestSingleTaskAllFields:
 
 class TestDateShortcuts:
     async def test_start_shortcut_expands_and_sets_due_automatically(
-        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+        self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         """`today` shortcut in start-date expands + auto-copies to due-date."""
         from datetime import date
@@ -230,13 +229,14 @@ class TestDateShortcuts:
             await pilot.pause()
 
         today_iso = date.today().isoformat()
-        assert len(client.updates) == 1
-        _, _, changes = client.updates[0]
+        op = app.pending_ops.get(1)
+        assert op is not None
+        changes = op.form.api_changes()
         assert changes['startDate'] == today_iso
         assert changes['dueDate'] == today_iso
 
     async def test_explicit_due_not_overwritten(
-        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+        self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         """If user sets both start and due explicitly, due is kept as-is."""
         from textual.widgets import Input
@@ -252,12 +252,13 @@ class TestDateShortcuts:
             await pilot.press('g')
             await pilot.pause()
 
-        _, _, changes = client.updates[0]
+        op = app.pending_ops.get(1)
+        changes = op.form.api_changes()
         assert changes['startDate'] == '2026-05-01'
         assert changes['dueDate'] == '2026-05-15'
 
     async def test_plus_days_shortcut(
-        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+        self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         from datetime import date, timedelta
 
@@ -274,13 +275,14 @@ class TestDateShortcuts:
             await pilot.pause()
 
         expected = (date.today() + timedelta(days=7)).isoformat()
-        _, _, changes = client.updates[0]
-        assert changes['startDate'] == expected
+        op = app.pending_ops.get(1)
+        assert op.form.api_changes()['startDate'] == expected
 
 
 class TestApplyThroughRealClient:
     """Verify that pressing 'g' actually fires the HTTP PATCH via the real client."""
 
+    @pytest.mark.skip(reason='Moved to ApplyingScreen integration test in Phase F')
     async def test_apply_sends_patch_to_openproject(
         self, tasks: list, respx_mock
     ) -> None:
@@ -661,9 +663,7 @@ class TestWorkloadShortcut:
 
         from textual.widgets import Input
 
-        # Busy: today (if workday) and tomorrow — expect the day after
         today = date.today()
-        # Make sure we start from a workday for a predictable test
         if today.weekday() >= 5:
             today += timedelta(days=7 - today.weekday())
         busy = {today, today + timedelta(days=1)}
@@ -672,37 +672,27 @@ class TestWorkloadShortcut:
             expected_free += timedelta(days=1)
 
         class BusyClient:
-            def __init__(self) -> None:
-                self.updates: list = []
-
             async def get_busy_days(self, principal_id: int) -> set[date]:
                 return busy
 
-            async def update_work_package(
-                self, wp_id: int, *, lock_version: int, changes: dict
-            ):
-                self.updates.append((wp_id, lock_version, changes))
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
                 return None
 
-        bc = BusyClient()
-        app = OpApp(tasks=tasks, config=_config(), client=bc)
+        app = OpApp(tasks=tasks, config=_config(), client=BusyClient())
         async with app.run_test() as pilot:
             await pilot.press('u')
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            # Select an assignee so the modal knows who to check
             modal.form.set_assignee(principal_id=5, is_group=False)
-            # Pretend user typed "next" into start
             modal.query_one('#input-start', Input).value = 'next'
-            # Fake "today" to our chosen workday for determinism
             modal._today_override = today  # type: ignore[attr-defined]
             await pilot.press('g')
             await pilot.pause()
 
-        assert len(bc.updates) == 1
-        _, _, changes = bc.updates[0]
-        assert changes['startDate'] == expected_free.isoformat()
+        op = app.pending_ops.get(1)
+        assert op is not None
+        assert op.form.api_changes()['startDate'] == expected_free.isoformat()
 
     async def test_next_falls_back_without_client(
         self, app_factory: T.Callable[..., OpApp]
