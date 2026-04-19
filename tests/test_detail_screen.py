@@ -166,6 +166,25 @@ class TestPendingDiff:
             assert 'Neuer Titel' in meta
             assert '→' in meta
 
+    async def test_pending_project_change_shows_arrow_in_meta(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.update_form import UpdateForm
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            screen = app.screen
+            form = UpdateForm()
+            form.project_id = 99
+            app.pending_ops.add_or_merge(screen.wp.id, form)
+            meta = screen._meta_text(
+                projects_lookup={10: 'Web', 99: 'Mobile'}
+            )
+            assert '→' in meta
+            assert 'Mobile' in meta
+
 
 class TestEdit:
     async def test_e_opens_update_for_current_task_only(

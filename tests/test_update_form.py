@@ -131,6 +131,39 @@ class TestGroupAssignee:
         }
 
 
+class TestProject:
+    def test_set_project(self) -> None:
+        form = UpdateForm()
+        form.project_id = 10
+        assert form.has_changes
+        assert form.api_changes() == {
+            '_links': {'project': {'href': '/api/v3/projects/10'}}
+        }
+
+    def test_clear_project(self) -> None:
+        form = UpdateForm()
+        form.project_id = 10
+        form.project_id = None
+        assert not form.has_changes
+
+    def test_project_combined_with_other_links(self) -> None:
+        form = UpdateForm()
+        form.status_id = 2
+        form.project_id = 5
+        assert form.api_changes() == {
+            '_links': {
+                'status': {'href': '/api/v3/statuses/2'},
+                'project': {'href': '/api/v3/projects/5'},
+            }
+        }
+
+    def test_project_in_summary(self) -> None:
+        form = UpdateForm()
+        form.project_id = 10
+        summary = form.summary(projects={10: 'WebPortal'})
+        assert 'WebPortal' in summary
+
+
 class TestCombined:
     def test_all_fields_at_once(self) -> None:
         form = UpdateForm()

@@ -35,6 +35,7 @@ def _config(
         types={1: 'Task', 2: 'Bug'},
         priorities=priorities or {8: 'Normal', 9: 'Hoch'},
         users={5: 'Max', 6: 'Anna'},
+        projects={10: 'Web', 11: 'Mobile'},
     )
     return Config(
         connection=ConnectionConfig(base_url='https://op.example.com'),
@@ -95,6 +96,39 @@ class TestOpenClose:
             await pilot.pause()
             assert isinstance(app.screen, MainScreen)
             assert client.updates == []
+
+
+class TestProjectSelect:
+    async def test_project_select_is_present(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Select
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            # The new project select must exist — both in single and batch edit mode
+            assert modal.query('#sel-project')
+
+    async def test_project_select_available_in_batch_edit(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Batch edit (target_count > 1): user must still be able to reassign project."""
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('space')
+            await pilot.press('down')
+            await pilot.press('space')
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            # Scalar inputs hidden for batch, but link fields (incl. project) present
+            assert modal.query('#sel-project')
+            assert not modal.query('#input-subject')
 
 
 class TestApply:
