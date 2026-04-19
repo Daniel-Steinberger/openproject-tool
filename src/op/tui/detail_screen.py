@@ -207,6 +207,7 @@ class DetailScreen(Screen[None]):
         statuses_lookup: dict[int, str] | None = None,
         types_lookup: dict[int, str] | None = None,
         priorities_lookup: dict[int, str] | None = None,
+        projects_lookup: dict[int, str] | None = None,
         users_lookup: dict[int, str] | None = None,
     ) -> str:
         """Build the meta header with overlaid pending-diff annotations."""
@@ -214,6 +215,7 @@ class DetailScreen(Screen[None]):
         statuses = statuses_lookup if statuses_lookup is not None else remote.statuses
         types = types_lookup if types_lookup is not None else remote.types
         priorities = priorities_lookup if priorities_lookup is not None else remote.priorities
+        projects = projects_lookup if projects_lookup is not None else remote.projects
         users = users_lookup if users_lookup is not None else {**remote.users, **remote.groups}
 
         pending = self._pending_form()
@@ -223,7 +225,7 @@ class DetailScreen(Screen[None]):
 
         parts = [
             f'[bold cyan]OP#{self.wp.id}[/bold cyan]  [bold]{subject}[/bold]',
-            self._status_type_project_line(pending, statuses, types),
+            self._status_type_project_line(pending, statuses, types, projects),
         ]
         priority_line = self._priority_line(pending, priorities)
         if priority_line:
@@ -250,7 +252,11 @@ class DetailScreen(Screen[None]):
         return f'{current} [bold yellow]→ {new_value}[/bold yellow]'
 
     def _status_type_project_line(
-        self, pending, statuses: dict[int, str], types: dict[int, str]
+        self,
+        pending,
+        statuses: dict[int, str],
+        types: dict[int, str],
+        projects: dict[int, str],
     ):  # noqa: ANN202
         status = self._diff_text(
             self.wp.status_name, statuses.get(pending.status_id) if pending else None
@@ -258,7 +264,11 @@ class DetailScreen(Screen[None]):
         type_ = self._diff_text(
             self.wp.type_name, types.get(pending.type_id) if pending else None
         )
-        return f'Status: {status}   Type: {type_}   Project: {self.wp.project_name}'
+        project = self._diff_text(
+            self.wp.project_name,
+            projects.get(pending.project_id) if pending else None,
+        )
+        return f'Status: {status}   Type: {type_}   Project: {project}'
 
     def _priority_line(self, pending, priorities: dict[int, str]):  # noqa: ANN202
         if not self.wp.priority_name and not (pending and pending.priority_id):

@@ -96,6 +96,8 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                 yield _make_select(self._remote.types, id='sel-type')
                 yield Label('Priority:')
                 yield _make_select(self._remote.priorities, id='sel-priority')
+                yield Label('Project:')
+                yield _make_select(self._remote.projects, id='sel-project')
                 yield Label('Assignee:')
                 yield _make_assignee_select(self._remote.users, self._remote.groups)
                 if self._show_scalars:
@@ -137,6 +139,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             'sel-status': 'status_id',
             'sel-type': 'type_id',
             'sel-priority': 'priority_id',
+            'sel-project': 'project_id',
         }
         attr = field_map.get(select_id)
         if attr is not None:

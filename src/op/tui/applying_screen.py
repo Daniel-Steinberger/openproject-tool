@@ -189,6 +189,7 @@ class ApplyingScreen(Screen[None]):
             statuses=remote.statuses,
             types=remote.types,
             priorities=remote.priorities,
+            projects=remote.projects,
             users={**remote.users, **remote.groups},
         )
         return Text(text or '(no changes)', style='yellow')

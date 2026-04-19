@@ -17,6 +17,7 @@ class UpdateForm:
         self._status_id: int | None = None
         self._type_id: int | None = None
         self._priority_id: int | None = None
+        self._project_id: int | None = None
         self._assignee_id: int | None = None
         self._assignee_is_group: bool = False
         self._unassign: bool = False
@@ -50,6 +51,14 @@ class UpdateForm:
     @priority_id.setter
     def priority_id(self, value: int | None) -> None:
         self._priority_id = value
+
+    @property
+    def project_id(self) -> int | None:
+        return self._project_id
+
+    @project_id.setter
+    def project_id(self, value: int | None) -> None:
+        self._project_id = value
 
     @property
     def assignee_id(self) -> int | None:
@@ -131,6 +140,8 @@ class UpdateForm:
             self._type_id = other._type_id
         if other._priority_id is not None:
             self._priority_id = other._priority_id
+        if other._project_id is not None:
+            self._project_id = other._project_id
 
         # assignee: either side may switch between user-id and unassign-flag
         if other._assignee_id is not None:
@@ -160,6 +171,8 @@ class UpdateForm:
             links['type'] = {'href': f'/api/v3/types/{self._type_id}'}
         if self._priority_id is not None:
             links['priority'] = {'href': f'/api/v3/priorities/{self._priority_id}'}
+        if self._project_id is not None:
+            links['project'] = {'href': f'/api/v3/projects/{self._project_id}'}
         if self._assignee_id is not None:
             kind = 'groups' if self._assignee_is_group else 'users'
             links['assignee'] = {'href': f'/api/v3/{kind}/{self._assignee_id}'}
@@ -185,6 +198,7 @@ class UpdateForm:
         statuses: dict[int, str] | None = None,
         types: dict[int, str] | None = None,
         priorities: dict[int, str] | None = None,
+        projects: dict[int, str] | None = None,
         users: dict[int, str] | None = None,
     ) -> str:
         """Human-readable one-line summary for confirmation display."""
@@ -198,6 +212,9 @@ class UpdateForm:
         if self._priority_id is not None:
             name = (priorities or {}).get(self._priority_id, f'#{self._priority_id}')
             lines.append(f'Priority → {name}')
+        if self._project_id is not None:
+            name = (projects or {}).get(self._project_id, f'#{self._project_id}')
+            lines.append(f'Project → {name}')
         if self._assignee_id is not None:
             name = (users or {}).get(self._assignee_id, f'#{self._assignee_id}')
             lines.append(f'Assignee → {name}')

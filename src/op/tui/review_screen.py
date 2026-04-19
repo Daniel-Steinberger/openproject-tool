@@ -145,6 +145,7 @@ class ReviewScreen(Screen[None]):
                         statuses=remote.statuses,
                         types=remote.types,
                         priorities=remote.priorities,
+                        projects=remote.projects,
                         users=users_and_groups,
                     ),
                     style='yellow',

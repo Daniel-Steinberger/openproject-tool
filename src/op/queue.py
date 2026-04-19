@@ -26,10 +26,12 @@ class PendingOperation:
         statuses: dict[int, str] | None = None,
         types: dict[int, str] | None = None,
         priorities: dict[int, str] | None = None,
+        projects: dict[int, str] | None = None,
         users: dict[int, str] | None = None,
     ) -> str:
         return self.form.summary(
-            statuses=statuses, types=types, priorities=priorities, users=users
+            statuses=statuses, types=types, priorities=priorities,
+            projects=projects, users=users,
         )
 
 
