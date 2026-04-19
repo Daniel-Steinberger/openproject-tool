@@ -13,6 +13,7 @@ from op.api import AuthError, OpenProjectClient, OpenProjectError
 from op.config import Config, default_config_path, get_api_key, load_config
 from op.models import WorkPackage
 from op.search import build_api_filters, parse
+from op.tui.app import OpApp
 
 
 def main() -> None:
@@ -78,11 +79,13 @@ async def run(
             console.print('[green]Remote data loaded.[/green]')
             return 0
 
+        query = parse(args.query, defaults=config.defaults)
         if args.interactive:
-            console.print('[yellow]Interactive mode is not yet implemented.[/yellow]')
+            initial_tasks = await _initial_tasks(client, query, config)
+            app = OpApp(tasks=initial_tasks, config=config)
+            await app.run_async()
             return 0
 
-        query = parse(args.query, defaults=config.defaults)
         if query.task_id is not None:
             wp = await client.get_work_package(query.task_id)
             if wp is None:
@@ -98,6 +101,18 @@ async def run(
         for wp in results:
             console.print(format_result_line(wp, config.connection.base_url))
         return 0
+
+
+async def _initial_tasks(
+    client: OpenProjectClient, query, config: Config
+) -> list[WorkPackage]:
+    if query.task_id is not None:
+        wp = await client.get_work_package(query.task_id)
+        return [wp] if wp else []
+    if not query.words and not query.filters:
+        return []
+    api_filters = build_api_filters(query, config.remote)
+    return await client.search_work_packages(filters=api_filters)
 
 
 def format_result_line(wp: WorkPackage, base_url: str) -> Text:
