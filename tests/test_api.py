@@ -270,6 +270,38 @@ class TestWorkPackages:
         body = json.loads(route.calls.last.request.content)
         assert body == {'comment': {'raw': 'Hallo Welt'}}
 
+    async def test_get_activities(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/1234/activities').mock(
+            return_value=httpx.Response(
+                200,
+                json=_collection(
+                    [
+                        {
+                            '_type': 'Activity::Comment',
+                            'id': 1,
+                            'createdAt': '2026-01-01T10:00:00Z',
+                            'comment': {'raw': 'Erster'},
+                            '_links': {'user': {'href': '/api/v3/users/5', 'title': 'Max'}},
+                        },
+                        {
+                            '_type': 'Activity::Comment',
+                            'id': 2,
+                            'createdAt': '2026-01-02T10:00:00Z',
+                            'comment': {'raw': 'Zweiter'},
+                            '_links': {'user': {'href': '/api/v3/users/6', 'title': 'Anna'}},
+                        },
+                    ]
+                ),
+            )
+        )
+        async with client:
+            activities = await client.get_activities(1234)
+        assert len(activities) == 2
+        assert activities[0].comment == 'Erster'
+        assert activities[1].user_name == 'Anna'
+
 
 class TestClientLifecycle:
     async def test_client_is_closed_after_context(self) -> None:

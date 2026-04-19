@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 from op.models import (
+    Activity,
     CustomField,
     Priority,
     Project,
@@ -189,6 +190,33 @@ class TestFromApi:
         assert wp.assignee_name is None
         assert wp.priority_id is None
         assert wp.description is None
+
+
+class TestActivity:
+    def test_from_api_with_comment(self) -> None:
+        payload = {
+            '_type': 'Activity::Comment',
+            'id': 77,
+            'createdAt': '2026-01-01T10:00:00Z',
+            'comment': {'raw': 'Ein Kommentar'},
+            '_links': {'user': {'href': '/api/v3/users/5', 'title': 'Max'}},
+        }
+        a = Activity.from_api(payload)
+        assert a.id == 77
+        assert a.comment == 'Ein Kommentar'
+        assert a.user_name == 'Max'
+        assert a.created_at == '2026-01-01T10:00:00Z'
+
+    def test_from_api_without_comment(self) -> None:
+        payload = {
+            '_type': 'Activity',
+            'id': 78,
+            'createdAt': '2026-01-02T10:00:00Z',
+            'comment': {'raw': ''},
+            '_links': {'user': {'href': '/api/v3/users/5', 'title': 'Max'}},
+        }
+        a = Activity.from_api(payload)
+        assert a.comment is None
 
 
 class TestIdExtraction:
