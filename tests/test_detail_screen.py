@@ -323,10 +323,11 @@ class TestSearch:
             assert input_.display is True
             assert input_.has_focus
 
-    async def test_search_input_is_tall_enough_to_show_text(
+    async def test_search_bar_is_single_line_no_border(
         self, app_factory: T.Callable[..., OpApp]
     ) -> None:
-        """Regression: search bar was height:1 which cropped the Input content line."""
+        """Search bar mimics less: one line, no border, full-width coloured background."""
+        from textual.containers import Horizontal
         from textual.widgets import Input
 
         app = app_factory()
@@ -335,9 +336,27 @@ class TestSearch:
             await pilot.pause()
             await pilot.press('slash')
             await pilot.pause()
+            bar = app.screen.query_one('#search-bar', Horizontal)
+            assert bar.region.height == 1
             input_ = app.screen.query_one('#search-input', Input)
-            # Textual Input default height is 3 rows (top border + content + bottom border)
-            assert input_.region.height >= 3
+            # Input must also be single-line (no rendered border around it).
+            assert input_.region.height == 1
+
+    async def test_search_input_accepts_typed_text(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """The text entered by the user must land in Input.value."""
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('slash')
+            await pilot.pause()
+            await pilot.press('f', 'o', 'o')
+            await pilot.pause()
+            assert app.screen.query_one('#search-input', Input).value == 'foo'
 
     async def test_search_hit_markdown_contains_highlighted_match_span(
         self, tasks: list
