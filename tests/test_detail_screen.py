@@ -118,6 +118,55 @@ class TestOpenClose:
             assert isinstance(app.screen, MainScreen)
 
 
+class TestPendingDiff:
+    async def test_no_pending_meta_text_has_no_arrow(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            screen = app.screen
+            assert '→' not in screen._meta_text()
+
+    async def test_pending_status_change_shows_arrow_in_meta(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.update_form import UpdateForm
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            screen = app.screen
+            # Queue a status change for the task we're viewing
+            form = UpdateForm()
+            form.status_id = 2
+            app.pending_ops.add_or_merge(screen.wp.id, form)
+            meta = screen._meta_text(
+                statuses_lookup={1: 'Neu', 2: 'In Bearbeitung'}
+            )
+            assert '→' in meta
+            assert 'In Bearbeitung' in meta
+
+    async def test_pending_subject_diff(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.update_form import UpdateForm
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            screen = app.screen
+            form = UpdateForm()
+            form.subject = 'Neuer Titel'
+            app.pending_ops.add_or_merge(screen.wp.id, form)
+            meta = screen._meta_text()
+            assert 'Neuer Titel' in meta
+            assert '→' in meta
+
+
 class TestEdit:
     async def test_e_opens_update_for_current_task_only(
         self, app_factory: T.Callable[..., OpApp]
@@ -128,6 +177,23 @@ class TestEdit:
             await pilot.press('e')
             await pilot.pause()
             assert isinstance(app.screen, UpdateModal)
+
+    async def test_e_g_queues_change(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Editing from detail view must push into the app-queue (same flow as selector)."""
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.press('e')
+            await pilot.pause()
+            modal = app.screen
+            modal.form.status_id = 2
+            await pilot.press('g')
+            await pilot.pause()
+        op = app.pending_ops.get(1)
+        assert op is not None
+        assert op.form.status_id == 2
 
 
 class TestOpenInBrowser:
