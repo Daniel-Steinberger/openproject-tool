@@ -199,6 +199,17 @@ class MainScreen(Screen[None]):
         except Exception:  # noqa: BLE001
             pass
 
+    def refresh_row(self, wp: WorkPackage) -> None:
+        """Public: apply fresh server state to the row (called from ApplyingScreen)."""
+        self._tasks_by_id[wp.id] = wp
+        table = self.query_one('#task-list', DataTable)
+        try:
+            table.update_cell(str(wp.id), _COL_STATUS, wp.status_name)
+            table.update_cell(str(wp.id), _COL_TYPE, wp.type_name)
+            table.update_cell(str(wp.id), _COL_SUBJECT, wp.subject)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _target_ids(self) -> list[int]:
         selected = self.selection.as_list()
         if selected:

@@ -130,19 +130,27 @@ class ApplyingScreen(Screen[None]):
         if self.client is None:
             op.error = 'no client configured'
             return False
-        wp = next(
-            (t for t in getattr(self.app, '_initial_tasks', []) if t.id == op.task_id),
-            None,
-        )
+        main_screen = self._find_main_screen()
+        wp = main_screen._tasks_by_id.get(op.task_id) if main_screen else None
         lock_version = wp.lock_version if wp is not None else 1
         try:
-            await self.client.update_work_package(
+            fresh = await self.client.update_work_package(
                 op.task_id, lock_version=lock_version, changes=op.form.api_changes()
             )
         except Exception as exc:  # noqa: BLE001
             op.error = str(exc)
             return False
+        if fresh is not None and main_screen is not None:
+            main_screen.refresh_row(fresh)
         return True
+
+    def _find_main_screen(self):  # noqa: ANN202
+        from op.tui.main_screen import MainScreen
+
+        for screen in self.app.screen_stack:
+            if isinstance(screen, MainScreen):
+                return screen
+        return None
 
     # --- helpers ---------------------------------------------------------
 

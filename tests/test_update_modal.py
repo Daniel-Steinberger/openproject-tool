@@ -280,16 +280,16 @@ class TestDateShortcuts:
 
 
 class TestApplyThroughRealClient:
-    """Verify that pressing 'g' actually fires the HTTP PATCH via the real client."""
+    """Full integration — u → g queues, then g → g runs the PATCH."""
 
-    @pytest.mark.skip(reason='Moved to ApplyingScreen integration test in Phase F')
-    async def test_apply_sends_patch_to_openproject(
+    async def test_full_flow_sends_patch_to_openproject(
         self, tasks: list, respx_mock
     ) -> None:
         import httpx
         from textual.widgets import Input
 
         from op.api import OpenProjectClient
+        from op.tui.main_screen import MainScreen
 
         base_url = 'https://op.example.com'
         patch_route = respx_mock.patch(f'{base_url}/api/v3/work_packages/1').mock(
@@ -303,7 +303,7 @@ class TestApplyThroughRealClient:
                     'lockVersion': 2,
                     '_links': {
                         'type': {'href': '/api/v3/types/1', 'title': 'Task'},
-                        'status': {'href': '/api/v3/statuses/2', 'title': 'In Bearbeitung'},
+                        'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
                         'project': {'href': '/api/v3/projects/10', 'title': 'Web'},
                     },
                 },
@@ -317,13 +317,17 @@ class TestApplyThroughRealClient:
                 await pilot.pause()
                 modal = app.screen
                 assert isinstance(modal, UpdateModal)
-                # Change subject directly on the single-task form
                 modal.query_one('#input-subject', Input).value = 'Neuer Titel'
+                await pilot.press('g')  # dismiss modal → queue
+                await pilot.pause()
+                # Selector → Review → Applying
                 await pilot.press('g')
-                # Give any async callback/worker a chance to complete
                 await pilot.pause()
-                await pilot.pause()
-                await pilot.pause()
+                await pilot.press('g')
+                for _ in range(20):
+                    await pilot.pause()
+                    if isinstance(app.screen, MainScreen):
+                        break
 
         assert patch_route.called, 'Apply did not send a PATCH request to OpenProject'
         import json
