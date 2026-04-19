@@ -114,7 +114,9 @@ class DetailScreen(Screen[None]):
         webbrowser.open(f'{base_url}/work_packages/{self.wp.id}')
 
     def action_edit(self) -> None:
-        modal = UpdateModal(remote=self.config.remote, target_count=1, wp=self.wp)
+        modal = UpdateModal(
+            remote=self.config.remote, target_count=1, wp=self.wp, client=self.client
+        )
 
         async def _apply(form: UpdateForm | None) -> None:
             if form is None or self.client is None:

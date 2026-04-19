@@ -119,6 +119,7 @@ class MainScreen(Screen[None]):
             remote=self.config.remote,
             target_count=len(target_ids),
             wp=single_wp,
+            client=self.client,
         )
 
         async def _apply(form: UpdateForm | None) -> None:

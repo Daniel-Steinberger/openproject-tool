@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import typing as T
+from datetime import date
+
 from textual.binding import Binding
 from textual.containers import Grid, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Label, Select, TextArea
 
 from op.config import RemoteConfig
-from op.date_shortcuts import parse_shortcut
+from op.date_shortcuts import next_free_day, parse_shortcut
 from op.models import WorkPackage
 from op.tui.update_form import UpdateForm
+
+_WORKLOAD_SHORTCUTS = {'next', 'nf'}
 
 
 class UpdateModal(ModalScreen[UpdateForm | None]):
@@ -62,6 +67,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         remote: RemoteConfig,
         target_count: int,
         wp: WorkPackage | None = None,
+        client: T.Any | None = None,
     ) -> None:
         super().__init__()
         self.form = UpdateForm()
@@ -69,6 +75,9 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         self._target_count = target_count
         self._wp = wp
         self._show_scalars = target_count == 1
+        self._client = client
+        # Overridable for deterministic tests (the TUI otherwise uses date.today()).
+        self._today_override: date | None = None
 
     def compose(self):  # noqa: ANN201
         with Vertical():
@@ -157,12 +166,46 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         if new_desc != (self._wp.description or ''):
             self.form.description = new_desc
 
-    def action_apply(self) -> None:
+    async def action_apply(self) -> None:
         self._sync_scalar_inputs_to_form()
+        await self._apply_workload_shortcut_if_needed()
         self.dismiss(self.form if self.form.has_changes else None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    async def _apply_workload_shortcut_if_needed(self) -> None:
+        """Replace the `next`/`nf` start-date with a workload-aware free day."""
+        if not self._show_scalars or self._client is None:
+            return
+        raw_start = self.query_one('#input-start', Input).value.strip().lower()
+        if raw_start not in _WORKLOAD_SHORTCUTS:
+            return
+        principal_id = self._effective_assignee_id()
+        if principal_id is None:
+            return
+        try:
+            busy = await self._client.get_busy_days(principal_id)
+        except Exception:  # noqa: BLE001 — TUI must stay usable even if API blips
+            return
+        today = self._today_override or date.today()
+        free = next_free_day(today, busy_days=busy)
+        self.form.start_date = free.isoformat()
+        raw_due = self.query_one('#input-due', Input).value.strip()
+        if not raw_due:
+            self.form.due_date = free.isoformat()
+
+    def _effective_assignee_id(self) -> int | None:
+        """The assignee whose workload the next-free lookup should target.
+
+        Prefer the assignee selected in the edit dialog (user is reassigning the task);
+        fall back to the task's current assignee.
+        """
+        if self.form.assignee_id is not None:
+            return self.form.assignee_id
+        if self._wp is not None and self._wp.assignee_id is not None:
+            return self._wp.assignee_id
+        return None
 
 
 def _iso(value) -> str:  # noqa: ANN001
