@@ -293,6 +293,15 @@ class DetailScreen(Screen[None]):
     # --- actions ---------------------------------------------------------
 
     def action_close(self) -> None:
+        # If the search bar is open, Esc/q cancels the search first (less convention)
+        # and keeps the detail screen alive.
+        try:
+            bar = self.query_one('#search-bar', Horizontal)
+        except Exception:  # noqa: BLE001
+            bar = None
+        if bar is not None and 'visible' in bar.classes:
+            self._close_search_bar(clear=True)
+            return
         self.app.pop_screen()
 
     # --- less-style scroll controls ---
@@ -339,17 +348,28 @@ class DetailScreen(Screen[None]):
         input_.value = ''
         input_.focus()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Incremental search — update matches live while the user types."""
         if event.input.id != 'search-input':
             return
         self._run_search(event.value)
-        # Hide bar, return focus to content so the list is scrollable again
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != 'search-input':
+            return
+        # Search already ran via on_input_changed; just close the bar and
+        # return focus to content. Marks stay — use n/N to navigate.
+        self._close_search_bar()
+
+    def _close_search_bar(self, *, clear: bool = False) -> None:
         bar = self.query_one('#search-bar', Horizontal)
         bar.remove_class('visible')
         try:
             self.query_one(Footer).display = True
         except Exception:  # noqa: BLE001
             pass
+        if clear:
+            self._run_search('')
         self._content_scroll().focus()
 
     def _run_search(self, pattern: str) -> None:
@@ -376,10 +396,10 @@ class DetailScreen(Screen[None]):
                 continue
             hits.append(widget)
             total += len(matches)
-            # Wrap each match in a <mark> tag so the rendered markdown shows the
-            # concrete text locations (not just an outline around the whole block).
+            # Wrap each match as bold so Textual's Markdown renderer actually
+            # makes them visible (inline HTML like <mark> is stripped).
             highlighted = regex.sub(
-                lambda m: f'<mark>{m.group(0)}</mark>', text
+                lambda m: f'**{m.group(0)}**', text
             )
             widget.update(highlighted)
         self._search_hits = hits
