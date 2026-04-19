@@ -126,6 +126,88 @@ class TestQuit:
         assert app._exit
 
 
+class TestQueueIntegration:
+    async def test_u_then_g_queues_change_instead_of_applying_directly(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """After 'u' → changes in modal → 'g', the op should be in the queue, not sent to API."""
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            # Change status via the form directly
+            modal = app.screen
+            modal.form.status_id = 2
+            await pilot.press('g')
+            await pilot.pause()
+        assert app.pending_ops.count == 1
+        op = app.pending_ops.get(1)
+        assert op is not None
+        assert op.form.status_id == 2
+
+    async def test_second_edit_merges_fields_in_queue(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        app = app_factory()
+        async with app.run_test() as pilot:
+            # First edit: set status
+            await pilot.press('u')
+            await pilot.pause()
+            app.screen.form.status_id = 2
+            await pilot.press('g')
+            await pilot.pause()
+            # Second edit on same task: set priority
+            await pilot.press('u')
+            await pilot.pause()
+            app.screen.form.priority_id = 9
+            await pilot.press('g')
+            await pilot.pause()
+        op = app.pending_ops.get(1)
+        assert op.form.status_id == 2
+        assert op.form.priority_id == 9
+        assert app.pending_ops.count == 1  # merged, not duplicated
+
+
+class TestRowMarker:
+    async def test_pending_row_shows_plus_marker(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """A task with pending changes gets +N displayed in a dedicated column."""
+        from textual.widgets import DataTable
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # Queue a change on task 1
+            await pilot.press('u')
+            await pilot.pause()
+            app.screen.form.status_id = 2
+            app.screen.form.subject = 'X'  # 2 changed fields
+            await pilot.press('g')
+            await pilot.pause()
+            # Back on MainScreen — inspect the table cell
+            table = app.screen.query_one('#task-list', DataTable)
+            # The queue column shows "+2" for task 1 (2 fields changed)
+            cell = table.get_cell('1', 'queue')
+            assert '2' in str(cell)
+
+
+class TestApplyAllBinding:
+    async def test_g_notifies_when_queue_empty(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Pressing 'g' on the selector while queue is empty must not push a screen."""
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            assert app.pending_ops.count == 0
+            await pilot.press('g')
+            await pilot.pause()
+            # Still on MainScreen
+            from op.tui.main_screen import MainScreen
+            assert isinstance(app.screen, MainScreen)
+
+
 class TestOpenInBrowser:
     async def test_o_opens_current_task_in_browser(
         self, app_factory: T.Callable[..., OpApp], monkeypatch: pytest.MonkeyPatch
