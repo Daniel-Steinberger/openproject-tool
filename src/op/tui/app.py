@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing as T
+
 from textual.app import App
 
 from op.config import Config
@@ -19,10 +21,19 @@ class OpApp(App[None]):
     }
     """
 
-    def __init__(self, *, tasks: list[WorkPackage], config: Config) -> None:
+    def __init__(
+        self,
+        *,
+        tasks: list[WorkPackage],
+        config: Config,
+        client: T.Any | None = None,
+    ) -> None:
         super().__init__()
         self._initial_tasks = tasks
         self._config = config
+        self._client = client
 
     def on_mount(self) -> None:
-        self.push_screen(MainScreen(tasks=self._initial_tasks, config=self._config))
+        self.push_screen(
+            MainScreen(tasks=self._initial_tasks, config=self._config, client=self._client)
+        )
