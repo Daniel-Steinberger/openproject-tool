@@ -134,10 +134,10 @@ class TestRunEndToEnd:
             )
         )
         args = _parse_args(['1234'])
-        console = _recording_console()
+        buf, console = _buffered_console()
         await run(args, config=config, config_path=None, console=console)
-        assert 'OP#1234' in console.export_text()
-        assert 'Direkt geladen' in console.export_text()
+        assert 'OP#1234' in buf.getvalue()
+        assert 'Direkt geladen' in buf.getvalue()
 
     async def test_search_by_words_prints_list(
         self, monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
@@ -186,9 +186,9 @@ class TestRunEndToEnd:
             )
         )
         args = _parse_args(['Ergebnis'])
-        console = _recording_console()
+        buf, console = _buffered_console()
         await run(args, config=config, config_path=None, console=console)
-        out = console.export_text()
+        out = buf.getvalue()
         assert 'OP#1' in out and 'OP#2' in out
 
 
@@ -199,5 +199,7 @@ def _render(renderable: T.Any, width: int = 120) -> str:
     return buffer.getvalue()
 
 
-def _recording_console(width: int = 120) -> Console:
-    return Console(width=width, record=True, force_terminal=True, color_system='truecolor')
+def _buffered_console(width: int = 120) -> tuple[io.StringIO, Console]:
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=width, force_terminal=True, color_system='truecolor')
+    return buffer, console
