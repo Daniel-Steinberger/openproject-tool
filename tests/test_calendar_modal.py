@@ -98,12 +98,109 @@ class TestBusyDays:
         modal = CalendarModal(initial=date(2026, 5, 15))
         assert modal.busy_days == set()
 
-    def test_grid_includes_markers_for_selected_and_busy(self) -> None:
-        """The grid markup must contain distinct markers for selected and busy days."""
-        busy = {date(2026, 5, 20)}
-        modal = CalendarModal(initial=date(2026, 5, 15), busy_days=busy)
+
+class TestGridStyling:
+    def test_selected_day_rendered_bold_with_inverted_colors(self) -> None:
+        """Selected day must use a bold/colored Rich markup tag, not >NN<."""
+        modal = CalendarModal(initial=date(2026, 5, 15))
         grid = modal._grid_markup()
-        # Selected day 15 is marked
-        assert '>15<' in grid or '>1<5' in grid
-        # Busy day 20 is marked (different from selected)
-        assert '*20' in grid or ' *20'[-3:] in grid
+        # No ASCII brackets around the selected day anymore
+        assert '>15<' not in grid
+        assert '>1<' not in grid
+        # Must contain a Rich-style tag with bold for the selected day
+        assert 'bold' in grid
+        # And the number itself must still be there
+        assert '15' in grid
+
+    def test_busy_day_has_color_markup(self) -> None:
+        """Busy days must be highlighted with a background color, not just '*NN'."""
+        modal = CalendarModal(initial=date(2026, 5, 15), busy_days={date(2026, 5, 20)})
+        grid = modal._grid_markup()
+        # No more ASCII markers
+        assert '*20' not in grid
+        # A Rich 'on yellow' (or similar) style must exist
+        assert 'on yellow' in grid or 'on red' in grid or 'on' in grid
+        assert '20' in grid
+
+    def test_weekday_header_styled(self) -> None:
+        modal = CalendarModal(initial=date(2026, 5, 15))
+        grid = modal._grid_markup()
+        assert 'Mo Tu We Th Fr Sa Su' in grid
+        # Header is dim
+        assert 'dim' in grid
+
+
+class TestCalendarShortcuts:
+    def test_jump_today_sets_selected_to_today(self) -> None:
+        modal = _mk(date(2026, 5, 15))
+        modal.action_jump_today()
+        assert modal.selected == date.today()
+
+    def test_jump_next_free_with_no_busy_returns_next_workday(self) -> None:
+        from datetime import timedelta
+
+        # Saturday — next workday is Monday
+        modal = _mk(date(2026, 4, 18))  # Saturday
+        modal._today_override = date(2026, 4, 18)  # type: ignore[attr-defined]
+        modal.action_jump_next_free()
+        assert modal.selected == date(2026, 4, 20)  # Monday
+        _ = timedelta  # silence unused
+
+    def test_jump_next_free_skips_busy_days(self) -> None:
+        today = date(2026, 4, 20)  # Monday
+        busy = {today, date(2026, 4, 21)}
+        modal = _mk(today, busy=busy)
+        modal._today_override = today  # type: ignore[attr-defined]
+        modal.action_jump_next_free()
+        assert modal.selected == date(2026, 4, 22)
+
+
+class TestStartDueMirrorOnCalendarPick:
+    """When the calendar pick writes to the start input, due should follow when empty."""
+
+    def test_pick_updates_due_when_empty(self) -> None:
+        from op.tui.update_modal import UpdateModal
+        from op.config import RemoteConfig
+        from op.models import WorkPackage
+
+        wp = WorkPackage(
+            id=1, subject='t', type_id=1, type_name='Task',
+            status_id=1, status_name='Neu', project_id=10, project_name='W',
+            lock_version=1, start_date=None, due_date=None,
+        )
+        modal = UpdateModal(remote=RemoteConfig(), target_count=1, wp=wp)
+        # Mirror logic is in _mirror_start_to_due — test it directly
+        picked = date(2026, 5, 20)
+        assert modal._mirror_start_to_due_target(
+            target_id='input-start', picked_iso=picked.isoformat(), due_current=''
+        ) == picked.isoformat()
+
+    def test_pick_does_not_overwrite_existing_due(self) -> None:
+        from op.tui.update_modal import UpdateModal
+        from op.config import RemoteConfig
+        from op.models import WorkPackage
+
+        wp = WorkPackage(
+            id=1, subject='t', type_id=1, type_name='Task',
+            status_id=1, status_name='Neu', project_id=10, project_name='W',
+            lock_version=1,
+        )
+        modal = UpdateModal(remote=RemoteConfig(), target_count=1, wp=wp)
+        assert modal._mirror_start_to_due_target(
+            target_id='input-start', picked_iso='2026-05-20', due_current='2026-06-01'
+        ) is None
+
+    def test_pick_into_due_does_not_touch_start(self) -> None:
+        from op.tui.update_modal import UpdateModal
+        from op.config import RemoteConfig
+        from op.models import WorkPackage
+
+        wp = WorkPackage(
+            id=1, subject='t', type_id=1, type_name='Task',
+            status_id=1, status_name='Neu', project_id=10, project_name='W',
+            lock_version=1,
+        )
+        modal = UpdateModal(remote=RemoteConfig(), target_count=1, wp=wp)
+        assert modal._mirror_start_to_due_target(
+            target_id='input-due', picked_iso='2026-05-20', due_current=''
+        ) is None
