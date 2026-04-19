@@ -191,6 +191,24 @@ class TestRunEndToEnd:
         out = buf.getvalue()
         assert 'OP#1' in out and 'OP#2' in out
 
+    async def test_unknown_filter_key_yields_friendly_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('OP_API_KEY', 'test')
+        config = Config(
+            connection=ConnectionConfig(base_url=BASE_URL),
+            defaults=DefaultsConfig(),
+            remote=RemoteConfig(),
+        )
+        args = _parse_args(['typ=bug'])
+        buf, console = _buffered_console()
+        exit_code = await run(args, config=config, config_path=None, console=console)
+        assert exit_code == 2
+        out = buf.getvalue()
+        assert 'typ' in out
+        assert 'type' in out  # hint listing valid keys
+        assert 'Traceback' not in out
+
 
 def _render(renderable: T.Any, width: int = 120) -> str:
     buffer = io.StringIO()
