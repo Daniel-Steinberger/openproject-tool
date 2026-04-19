@@ -270,3 +270,75 @@ class TestBuildApiFilters:
         q = SearchQuery(filters={'bogus': ['x']})
         with pytest.raises(ValueError, match='bogus'):
             build_api_filters(q, RemoteConfig())
+
+
+class TestFuzzyMatch:
+    def test_unique_substring_match_is_accepted(self) -> None:
+        """'nmo' uniquely matches 'Niklas Moschuring nmo' — should resolve."""
+        remote = RemoteConfig(users={
+            5: 'Niklas Moschuring nmo',
+            6: 'Anna Moller amo',
+        })
+        q = SearchQuery(filters={'assignee': ['nmo']})
+        assert build_api_filters(q, remote) == [
+            {'assigned_to_id': {'operator': '=', 'values': ['5']}}
+        ]
+
+    def test_fuzzy_match_is_case_insensitive(self) -> None:
+        remote = RemoteConfig(users={5: 'Daniel Kuhnert dku'})
+        q = SearchQuery(filters={'assignee': ['DKU']})
+        assert build_api_filters(q, remote) == [
+            {'assigned_to_id': {'operator': '=', 'values': ['5']}}
+        ]
+
+    def test_exact_match_wins_over_substring(self) -> None:
+        """If there's a literal match, it must win even if substrings also exist."""
+        remote = RemoteConfig(statuses={1: 'Neu', 2: 'Neue Idee'})
+        q = SearchQuery(filters={'status': ['Neu']})
+        assert build_api_filters(q, remote) == [
+            {'status_id': {'operator': '=', 'values': ['1']}}
+        ]
+
+    def test_ambiguous_substring_raises_with_candidate_list(self) -> None:
+        remote = RemoteConfig(users={
+            1: 'Admins',
+            2: 'Admins priorisiert',
+            3: 'Admins unpriorisiert',
+        })
+        q = SearchQuery(filters={'assignee': ['admin']})
+        with pytest.raises(ValueError) as excinfo:
+            build_api_filters(q, remote)
+        msg = str(excinfo.value)
+        assert 'admin' in msg.lower()
+        assert 'Admins priorisiert' in msg
+        assert 'Admins unpriorisiert' in msg
+        # The raw "Admins" entry is also a candidate
+        assert 'Admins' in msg
+
+    def test_no_match_at_all_still_raises_unknown(self) -> None:
+        remote = RemoteConfig(users={1: 'Max'})
+        q = SearchQuery(filters={'assignee': ['nonexistent']})
+        with pytest.raises(ValueError, match='Unknown assignee value'):
+            build_api_filters(q, remote)
+
+    def test_multiple_values_each_resolved_individually(self) -> None:
+        remote = RemoteConfig(users={
+            5: 'Niklas Moschuring nmo',
+            6: 'Daniel Kuhnert dku',
+            7: 'Alexander Prodanov apr',
+        })
+        q = SearchQuery(filters={'assignee': ['nmo', 'dku', 'apr']})
+        result = build_api_filters(q, remote)
+        assert result == [
+            {'assigned_to_id': {'operator': '=', 'values': ['5', '6', '7']}}
+        ]
+
+    def test_fuzzy_match_logs_resolved_name(self, caplog) -> None:  # noqa: ANN001
+        import logging
+        caplog.set_level(logging.DEBUG, logger='op.search')
+        remote = RemoteConfig(users={5: 'Niklas Moschuring nmo'})
+        q = SearchQuery(filters={'assignee': ['nmo']})
+        build_api_filters(q, remote)
+        text = '\n'.join(r.message for r in caplog.records)
+        assert 'nmo' in text
+        assert 'Niklas Moschuring nmo' in text
