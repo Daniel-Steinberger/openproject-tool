@@ -1,0 +1,60 @@
+[tool.poetry]
+name = "openproject-tool"
+version = "0.1.0"
+description = "Fast, keyboard-driven CLI and TUI for OpenProject"
+authors = ["Daniel Steinberger <Daniel.Steinberger@dvs.ag>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/dsteinberger/openproject-tool"
+repository = "https://github.com/dsteinberger/openproject-tool"
+keywords = ["openproject", "cli", "tui", "textual", "project-management"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+packages = [{ include = "op", from = "src" }]
+
+[tool.poetry.scripts]
+op = "op.cli:main"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+textual = "^1.0"
+httpx = "^0.27"
+pydantic = "^2.0"
+tomli-w = "^1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^0.23"
+respx = "^0.21"
+pytest-textual-snapshot = "^1.0"
+ruff = "^0.8"
+
+[build-system]
+requires = ["poetry-core>=1.8"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = ["E501"]
