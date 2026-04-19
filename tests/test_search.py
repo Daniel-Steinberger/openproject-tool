@@ -191,6 +191,21 @@ class TestBuildApiFilters:
             {'assignee_id': {'operator': '=', 'values': ['5']}}
         ]
 
+    def test_assignee_resolves_group_name(self) -> None:
+        remote = RemoteConfig(users={5: 'Max'}, groups={12: 'DevOps'})
+        q = SearchQuery(filters={'assignee': ['DevOps']})
+        assert build_api_filters(q, remote) == [
+            {'assignee_id': {'operator': '=', 'values': ['12']}}
+        ]
+
+    def test_assignee_mix_user_and_group(self) -> None:
+        remote = RemoteConfig(users={5: 'Max'}, groups={12: 'DevOps'})
+        q = SearchQuery(filters={'assignee': ['Max', 'DevOps']})
+        result = build_api_filters(q, remote)
+        assert result == [
+            {'assignee_id': {'operator': '=', 'values': ['5', '12']}}
+        ]
+
     def test_unknown_value_raises(self) -> None:
         remote = RemoteConfig(types={1: 'Task'})
         q = SearchQuery(filters={'type': ['wut']})

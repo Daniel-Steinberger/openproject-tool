@@ -7,6 +7,7 @@ import pytest
 from op.models import (
     Activity,
     CustomField,
+    Group,
     Priority,
     Project,
     Status,
@@ -49,6 +50,15 @@ class TestSimpleLookups:
     def test_custom_field(self) -> None:
         cf = CustomField(id=3, name='Story Points', field_format='int')
         assert cf.field_format == 'int'
+
+    def test_group(self) -> None:
+        g = Group(id=12, name='DevOps-Team')
+        assert g.id == 12
+        assert g.name == 'DevOps-Team'
+
+    def test_group_from_api(self) -> None:
+        payload = {'_type': 'Group', 'id': 12, 'name': 'DevOps-Team'}
+        assert Group.from_api(payload) == Group(id=12, name='DevOps-Team')
 
 
 class TestWorkPackage:

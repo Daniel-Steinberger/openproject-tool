@@ -148,6 +148,25 @@ class TestMetadataEndpoints:
             users = await client.get_users()
         assert users[0].name == 'Max'
 
+    async def test_get_groups(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/groups').mock(
+            return_value=httpx.Response(
+                200,
+                json=_collection(
+                    [
+                        {'_type': 'Group', 'id': 12, 'name': 'DevOps'},
+                        {'_type': 'Group', 'id': 13, 'name': 'QA'},
+                    ]
+                ),
+            )
+        )
+        async with client:
+            groups = await client.get_groups()
+        assert [g.id for g in groups] == [12, 13]
+        assert groups[0].name == 'DevOps'
+
     async def test_get_custom_fields_extracts_from_schemas(
         self, client: OpenProjectClient, respx_mock: respx.MockRouter
     ) -> None:

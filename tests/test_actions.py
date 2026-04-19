@@ -63,6 +63,12 @@ class TestLoadRemoteData:
                 ),
             )
         )
+        respx_mock.get(f'{BASE_URL}/api/v3/groups').mock(
+            return_value=httpx.Response(
+                200,
+                json=_collection([{'_type': 'Group', 'id': 12, 'name': 'DevOps'}]),
+            )
+        )
         respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
             return_value=httpx.Response(
                 200,
@@ -90,6 +96,7 @@ class TestLoadRemoteData:
         assert cfg.remote.priorities == {8: 'Normal'}
         assert cfg.remote.projects == {10: 'Web'}
         assert cfg.remote.users == {5: 'Max', 6: 'Anna'}
+        assert cfg.remote.groups == {12: 'DevOps'}
         assert cfg.remote.custom_fields == {3: 'Story Points'}
 
     async def test_skips_endpoint_returning_404(
@@ -103,7 +110,7 @@ class TestLoadRemoteData:
                 200, json=_collection([{'_type': 'Status', 'id': 1, 'name': 'Neu'}])
             )
         )
-        for ep in ('types', 'priorities', 'projects', 'users'):
+        for ep in ('types', 'priorities', 'projects', 'users', 'groups'):
             respx_mock.get(f'{BASE_URL}/api/v3/{ep}').mock(
                 return_value=httpx.Response(200, json=_collection([]))
             )
@@ -136,7 +143,7 @@ class TestLoadRemoteData:
             'type = ["Task"]\n'
         )
 
-        for ep in ('statuses', 'types', 'priorities', 'projects', 'users'):
+        for ep in ('statuses', 'types', 'priorities', 'projects', 'users', 'groups'):
             respx_mock.get(f'{BASE_URL}/api/v3/{ep}').mock(
                 return_value=httpx.Response(200, json=_collection([]))
             )

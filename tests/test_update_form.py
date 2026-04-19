@@ -108,6 +108,29 @@ class TestScalarFields:
         assert changes['_links']['status'] == {'href': '/api/v3/statuses/2'}
 
 
+class TestGroupAssignee:
+    def test_assignee_as_group_uses_group_url(self) -> None:
+        form = UpdateForm()
+        form.set_assignee(principal_id=12, is_group=True)
+        assert form.api_changes() == {
+            '_links': {'assignee': {'href': '/api/v3/groups/12'}}
+        }
+
+    def test_assignee_as_user_still_uses_user_url(self) -> None:
+        form = UpdateForm()
+        form.set_assignee(principal_id=5, is_group=False)
+        assert form.api_changes() == {
+            '_links': {'assignee': {'href': '/api/v3/users/5'}}
+        }
+
+    def test_setter_shortcut_defaults_to_user(self) -> None:
+        form = UpdateForm()
+        form.assignee_id = 5
+        assert form.api_changes() == {
+            '_links': {'assignee': {'href': '/api/v3/users/5'}}
+        }
+
+
 class TestCombined:
     def test_all_fields_at_once(self) -> None:
         form = UpdateForm()
