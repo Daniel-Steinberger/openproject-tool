@@ -46,8 +46,9 @@ class TestAuth:
         respx_mock.get(f'{BASE_URL}/api/v3/statuses').mock(
             return_value=httpx.Response(401, json={'message': 'unauthorized'})
         )
-        async with client, pytest.raises(AuthError):
-            await client.get_statuses()
+        async with client:
+            with pytest.raises(AuthError):
+                await client.get_statuses()
 
     async def test_500_raises_error(
         self, client: OpenProjectClient, respx_mock: respx.MockRouter
@@ -55,8 +56,9 @@ class TestAuth:
         respx_mock.get(f'{BASE_URL}/api/v3/statuses').mock(
             return_value=httpx.Response(500, text='boom')
         )
-        async with client, pytest.raises(OpenProjectError):
-            await client.get_statuses()
+        async with client:
+            with pytest.raises(OpenProjectError):
+                await client.get_statuses()
 
 
 class TestMetadataEndpoints:
