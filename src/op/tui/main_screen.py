@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing as T
 
+from rich.text import Text
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header
@@ -19,8 +20,12 @@ _COL_STATUS = 'status'
 _COL_TYPE = 'type'
 _COL_SUBJECT = 'subject'
 
-_MARK_SELECTED = '[x]'
-_MARK_UNSELECTED = '[ ]'
+
+def _selection_mark(selected: bool) -> Text:
+    """Return a visually distinct selection marker that survives cursor highlighting."""
+    if selected:
+        return Text('●', style='bold bright_green')
+    return Text('○', style='dim')
 
 
 class MainScreen(Screen[None]):
@@ -54,14 +59,14 @@ class MainScreen(Screen[None]):
 
     def on_mount(self) -> None:
         table = self.query_one('#task-list', DataTable)
-        table.add_column('Sel', key=_COL_SEL, width=4)
+        table.add_column('', key=_COL_SEL, width=3)
         table.add_column('ID', key=_COL_ID, width=10)
         table.add_column('Status', key=_COL_STATUS, width=16)
         table.add_column('Type', key=_COL_TYPE, width=10)
         table.add_column('Subject', key=_COL_SUBJECT)
         for task in self.tasks:
             table.add_row(
-                _MARK_UNSELECTED,
+                _selection_mark(False),
                 f'OP#{task.id}',
                 task.status_name,
                 task.type_name,
@@ -137,6 +142,6 @@ class MainScreen(Screen[None]):
         return int(row_key.value)
 
     def _refresh_mark(self, task_id: int) -> None:
-        marker = _MARK_SELECTED if self.selection.contains(task_id) else _MARK_UNSELECTED
+        marker = _selection_mark(self.selection.contains(task_id))
         table = self.query_one('#task-list', DataTable)
         table.update_cell(str(task_id), _COL_SEL, marker)
