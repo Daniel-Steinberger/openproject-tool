@@ -105,6 +105,13 @@ class ReviewScreen(Screen[None]):
         if self.app.pending_ops.count == 0:
             self.app.pop_screen()
             return
+        if self.client is None:
+            self.notify(
+                'Cannot apply — no API client. Start op with OP_API_KEY set.',
+                severity='error',
+                timeout=10,
+            )
+            return
         from op.tui.applying_screen import ApplyingScreen
 
         self.app.push_screen(
