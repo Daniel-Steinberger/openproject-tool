@@ -90,7 +90,10 @@ def build_api_filters(
             api_filters.append({'status': {'operator': values[0].lower()[0]}})
             continue
         if key not in _FILTER_KEY_MAP:
-            raise ValueError(f'Unknown filter key: {key!r}')
+            valid = ', '.join(sorted(_FILTER_KEY_MAP))
+            raise ValueError(
+                f'Unknown filter key: {key!r}. Valid keys: {valid}'
+            )
         op_key, remote_attr = _FILTER_KEY_MAP[key]
         lookup: dict[int, str] = getattr(remote, remote_attr)
         ids = [str(_resolve_name(key, v, lookup)) for v in values]

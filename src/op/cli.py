@@ -96,7 +96,11 @@ async def run(
             console.print(format_task_detail(wp, config.connection.base_url))
             return 0
 
-        api_filters = build_api_filters(query, config.remote)
+        try:
+            api_filters = build_api_filters(query, config.remote)
+        except ValueError as exc:
+            console.print(f'[red]Invalid search query:[/red] {exc}')
+            return 2
         results = await client.search_work_packages(filters=api_filters)
         for wp in results:
             console.print(format_result_line(wp, config.connection.base_url))
