@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from op.config import DefaultsConfig
-from op.search import SearchQuery, parse
+import pytest
+
+from op.config import DefaultsConfig, RemoteConfig
+from op.search import SearchQuery, build_api_filters, parse
 
 
 class TestIdLookup:
@@ -115,3 +117,94 @@ class TestEdgeCases:
         # `key=a=b` — everything after first = is the value.
         q = parse(['custom=a=b'])
         assert q.filters == {'custom': ['a=b']}
+
+
+class TestBuildApiFilters:
+    def test_empty_query(self) -> None:
+        assert build_api_filters(SearchQuery(), RemoteConfig()) == []
+
+    def test_type_name_resolved_to_id(self) -> None:
+        remote = RemoteConfig(types={1: 'Task', 2: 'Bug'})
+        q = SearchQuery(filters={'type': ['Bug']})
+        assert build_api_filters(q, remote) == [
+            {'type_id': {'operator': '=', 'values': ['2']}}
+        ]
+
+    def test_type_case_insensitive(self) -> None:
+        remote = RemoteConfig(types={1: 'Task', 2: 'Bug'})
+        q = SearchQuery(filters={'type': ['bug']})
+        assert build_api_filters(q, remote) == [
+            {'type_id': {'operator': '=', 'values': ['2']}}
+        ]
+
+    def test_multi_value_filter(self) -> None:
+        remote = RemoteConfig(types={1: 'Task', 2: 'Bug', 3: 'Feature'})
+        q = SearchQuery(filters={'type': ['task', 'feature']})
+        assert build_api_filters(q, remote) == [
+            {'type_id': {'operator': '=', 'values': ['1', '3']}}
+        ]
+
+    def test_status_open_meta(self) -> None:
+        q = SearchQuery(filters={'status': ['open']})
+        assert build_api_filters(q, RemoteConfig()) == [{'status': {'operator': 'o'}}]
+
+    def test_status_closed_meta(self) -> None:
+        q = SearchQuery(filters={'status': ['closed']})
+        assert build_api_filters(q, RemoteConfig()) == [{'status': {'operator': 'c'}}]
+
+    def test_status_named(self) -> None:
+        remote = RemoteConfig(statuses={1: 'Neu', 2: 'In Bearbeitung'})
+        q = SearchQuery(filters={'status': ['in bearbeitung']})
+        assert build_api_filters(q, remote) == [
+            {'status_id': {'operator': '=', 'values': ['2']}}
+        ]
+
+    def test_priority_named(self) -> None:
+        remote = RemoteConfig(priorities={8: 'Normal', 9: 'Hoch'})
+        q = SearchQuery(filters={'priority': ['hoch']})
+        assert build_api_filters(q, remote) == [
+            {'priority_id': {'operator': '=', 'values': ['9']}}
+        ]
+
+    def test_project_named(self) -> None:
+        remote = RemoteConfig(projects={10: 'Web', 11: 'Mobile'})
+        q = SearchQuery(filters={'project': ['mobile']})
+        assert build_api_filters(q, remote) == [
+            {'project_id': {'operator': '=', 'values': ['11']}}
+        ]
+
+    def test_assignee_named(self) -> None:
+        remote = RemoteConfig(users={5: 'Max Mustermann'})
+        q = SearchQuery(filters={'assignee': ['Max Mustermann']})
+        assert build_api_filters(q, remote) == [
+            {'assignee_id': {'operator': '=', 'values': ['5']}}
+        ]
+
+    def test_unknown_value_raises(self) -> None:
+        remote = RemoteConfig(types={1: 'Task'})
+        q = SearchQuery(filters={'type': ['wut']})
+        with pytest.raises(ValueError, match='type'):
+            build_api_filters(q, remote)
+
+    def test_words_add_subject_contains_filters(self) -> None:
+        q = SearchQuery(words=['deploy', 'bug'])
+        assert build_api_filters(q, RemoteConfig()) == [
+            {'subject': {'operator': '~', 'values': ['deploy']}},
+            {'subject': {'operator': '~', 'values': ['bug']}},
+        ]
+
+    def test_combined(self) -> None:
+        remote = RemoteConfig(types={1: 'Task', 2: 'Bug'})
+        q = SearchQuery(
+            words=['deploy'], filters={'status': ['open'], 'type': ['bug']}
+        )
+        assert build_api_filters(q, remote) == [
+            {'subject': {'operator': '~', 'values': ['deploy']}},
+            {'status': {'operator': 'o'}},
+            {'type_id': {'operator': '=', 'values': ['2']}},
+        ]
+
+    def test_unknown_key_raises(self) -> None:
+        q = SearchQuery(filters={'bogus': ['x']})
+        with pytest.raises(ValueError, match='bogus'):
+            build_api_filters(q, RemoteConfig())
