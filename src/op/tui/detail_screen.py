@@ -4,9 +4,9 @@ import typing as T
 import webbrowser
 
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Label, Markdown, Static
+from textual.widgets import Footer, Header, Label, Markdown
 
 from op.config import Config
 from op.models import Activity, WorkPackage
@@ -43,8 +43,21 @@ class DetailScreen(Screen[None]):
         text-style: bold;
         padding: 0 2;
     }
-    DetailScreen .activity {
+    DetailScreen #activities {
+        height: auto;
         padding: 0 2;
+    }
+    DetailScreen .activity-head {
+        margin-top: 1;
+    }
+    DetailScreen #activities Markdown {
+        background: $panel;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+    DetailScreen #activities-empty {
+        padding: 0 2;
+        color: $text-muted;
     }
     """
 
@@ -68,7 +81,7 @@ class DetailScreen(Screen[None]):
             if self.wp.description:
                 yield Markdown(self.wp.description, id='description')
             yield Label('Activity', id='activity-header')
-            yield Static(id='activity-list')
+            yield Vertical(id='activities')
         yield Footer()
 
     def on_mount(self) -> None:
@@ -83,21 +96,29 @@ class DetailScreen(Screen[None]):
             self._activities = await self.client.get_activities(self.wp.id)
         except Exception:  # noqa: BLE001 — TUI must stay alive even if API blips
             self._activities = []
-        self._render_activities()
+        await self._render_activities()
 
-    def _render_activities(self) -> None:
-        widget = self.query_one('#activity-list', Static)
-        if not self._activities:
-            widget.update('[dim](no comments)[/dim]')
-            return
-        lines = []
+    async def _render_activities(self) -> None:
+        """Mount one Label+Markdown pair per activity so comments render as real Markdown."""
+        container = self.query_one('#activities', Vertical)
+        await container.remove_children()
+
+        widgets: list = []
         for activity in self._activities:
             if not activity.comment:
                 continue
             user = activity.user_name or '(unknown)'
             when = activity.created_at or ''
-            lines.append(f'[bold]{user}[/bold]  [dim]{when}[/dim]\n{activity.comment}\n')
-        widget.update('\n'.join(lines) if lines else '[dim](no comments)[/dim]')
+            widgets.append(
+                Label(
+                    f'[bold]{user}[/bold]  [dim]{when}[/dim]',
+                    classes='activity-head',
+                )
+            )
+            widgets.append(Markdown(activity.comment))
+        if not widgets:
+            widgets.append(Label('(no comments)', id='activities-empty'))
+        await container.mount(*widgets)
 
     def _meta_text(
         self,

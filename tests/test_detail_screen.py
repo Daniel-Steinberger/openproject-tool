@@ -196,6 +196,49 @@ class TestEdit:
         assert op.form.status_id == 2
 
 
+class TestMarkdownActivities:
+    async def test_each_activity_rendered_as_markdown(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Markdown
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            # Wait until activities are loaded
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            markdowns = app.screen.query('#activities Markdown')
+            # FakeClient yields 2 activities with comments
+            assert len(markdowns) >= 2
+
+    async def test_no_comments_placeholder(
+        self, tasks: list
+    ) -> None:
+        from textual.widgets import Label, Markdown
+
+        class EmptyClient:
+            async def get_activities(self, wp_id):  # noqa: ANN001, ANN202
+                return []
+
+            async def add_comment(self, wp_id, text):  # noqa: ANN001, ANN202
+                pass
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        app = OpApp(tasks=tasks, config=_config(), client=EmptyClient())
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(5):
+                await pilot.pause()
+            # No Markdown children in the activities container
+            markdowns = app.screen.query('#activities Markdown')
+            assert len(markdowns) == 0
+
+
 class TestLessNavigation:
     async def test_space_scrolls_page_down(
         self, app_factory: T.Callable[..., OpApp]
