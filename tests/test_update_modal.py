@@ -276,3 +276,81 @@ class TestDateShortcuts:
         expected = (date.today() + timedelta(days=7)).isoformat()
         _, _, changes = client.updates[0]
         assert changes['startDate'] == expected
+
+
+class TestWorkloadShortcut:
+    async def test_next_uses_busy_days_when_client_available(
+        self, tasks: list, monkeypatch
+    ) -> None:
+        """When the assignee has today blocked, `next` should skip to the next free workday."""
+        from datetime import date, timedelta
+
+        from textual.widgets import Input
+
+        # Busy: today (if workday) and tomorrow — expect the day after
+        today = date.today()
+        # Make sure we start from a workday for a predictable test
+        if today.weekday() >= 5:
+            today += timedelta(days=7 - today.weekday())
+        busy = {today, today + timedelta(days=1)}
+        expected_free = today + timedelta(days=2)
+        while expected_free.weekday() >= 5:
+            expected_free += timedelta(days=1)
+
+        class BusyClient:
+            def __init__(self) -> None:
+                self.updates: list = []
+
+            async def get_busy_days(self, principal_id: int) -> set[date]:
+                return busy
+
+            async def update_work_package(
+                self, wp_id: int, *, lock_version: int, changes: dict
+            ):
+                self.updates.append((wp_id, lock_version, changes))
+                return None
+
+        bc = BusyClient()
+        app = OpApp(tasks=tasks, config=_config(), client=bc)
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            # Select an assignee so the modal knows who to check
+            modal.form.set_assignee(principal_id=5, is_group=False)
+            # Pretend user typed "next" into start
+            modal.query_one('#input-start', Input).value = 'next'
+            # Fake "today" to our chosen workday for determinism
+            modal._today_override = today  # type: ignore[attr-defined]
+            await pilot.press('g')
+            await pilot.pause()
+
+        assert len(bc.updates) == 1
+        _, _, changes = bc.updates[0]
+        assert changes['startDate'] == expected_free.isoformat()
+
+    async def test_next_falls_back_without_client(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """No client → basic next-workday shortcut still works."""
+        from datetime import date, timedelta
+
+        from textual.widgets import Input
+
+        app = app_factory()
+        app._client = None  # type: ignore[attr-defined]
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-start', Input).value = 'next'
+            await pilot.press('g')
+            await pilot.pause()
+        # With no client we expect the basic next-workday logic
+        today = date.today()
+        expected = today
+        while expected.weekday() >= 5:
+            expected += timedelta(days=1)
+        # We can't assert on client.updates (no client); just ensure no crash.

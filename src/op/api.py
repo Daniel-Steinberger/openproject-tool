@@ -5,6 +5,7 @@ import json
 import math
 import re
 import typing as T
+from datetime import date, timedelta
 
 import httpx
 
@@ -180,6 +181,28 @@ class OpenProjectClient:
     async def get_activities(self, wp_id: int) -> list[Activity]:
         elements = await self._get_collection(f'/work_packages/{wp_id}/activities')
         return [Activity.from_api(e) for e in elements]
+
+    async def get_busy_days(self, principal_id: int) -> set[date]:
+        """Return the set of days an assignee (user or group) already has open tasks on.
+
+        Tasks without a start date contribute nothing. Tasks with only a start date
+        contribute that one day; tasks with both start and due contribute the full range.
+        """
+        filters = [
+            {'assigned_to_id': {'operator': '=', 'values': [str(principal_id)]}},
+            {'status': {'operator': 'o'}},
+        ]
+        work_packages = await self.search_work_packages(filters=filters)
+        busy: set[date] = set()
+        for wp in work_packages:
+            if wp.start_date is None:
+                continue
+            end = wp.due_date or wp.start_date
+            current = wp.start_date
+            while current <= end:
+                busy.add(current)
+                current += timedelta(days=1)
+        return busy
 
     async def add_comment(self, wp_id: int, text: str) -> None:
         await self._request(

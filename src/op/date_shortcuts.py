@@ -68,3 +68,11 @@ def _next_workday(start: date) -> date:
     while d.weekday() >= 5:  # Sat=5, Sun=6
         d += timedelta(days=1)
     return d
+
+
+def next_free_day(today: date, *, busy_days: set[date]) -> date:
+    """First workday (Mon–Fri) on or after `today` that is not in `busy_days`."""
+    d = today
+    while d.weekday() >= 5 or d in busy_days:
+        d += timedelta(days=1)
+    return d
