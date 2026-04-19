@@ -175,7 +175,8 @@ class TestStartDueMirrorOnCalendarPick:
             target_id='input-start', picked_iso=picked.isoformat(), due_current=''
         ) == picked.isoformat()
 
-    def test_pick_does_not_overwrite_existing_due(self) -> None:
+    def test_pick_overwrites_existing_due_when_setting_start(self) -> None:
+        """Issue #10: changing the start via shortcut/pick moves due along with it."""
         from op.tui.update_modal import UpdateModal
         from op.config import RemoteConfig
         from op.models import WorkPackage
@@ -188,7 +189,7 @@ class TestStartDueMirrorOnCalendarPick:
         modal = UpdateModal(remote=RemoteConfig(), target_count=1, wp=wp)
         assert modal._mirror_start_to_due_target(
             target_id='input-start', picked_iso='2026-05-20', due_current='2026-06-01'
-        ) is None
+        ) == '2026-05-20'
 
     def test_pick_into_due_does_not_touch_start(self) -> None:
         from op.tui.update_modal import UpdateModal

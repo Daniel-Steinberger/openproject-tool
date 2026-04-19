@@ -393,6 +393,105 @@ class TestCalendarPopup:
             await modal.action_insert_next_free()
             assert start_input.value == expected.isoformat()
 
+    async def test_calendar_pick_mirrors_start_to_due_when_due_empty(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """When the calendar writes into start and due is empty, due should auto-fill."""
+        from datetime import date
+
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            start = modal.query_one('#input-start', Input)
+            due = modal.query_one('#input-due', Input)
+            start.value = ''
+            due.value = ''
+            start.focus()
+            await pilot.pause()
+            await modal.action_pick_date()
+            await pilot.pause()
+            cal = app.screen
+            # Walk through the calendar: move to a specific date, press Enter.
+            cal.selected = date(2026, 6, 15)
+            cal._refresh_display()
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+
+            assert start.value == '2026-06-15'
+            assert due.value == '2026-06-15'
+
+    async def test_calendar_pick_mirrors_start_to_due_even_when_due_has_value(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Issue #10: setting start via pick drags due to the same day (user can edit due after)."""
+        from datetime import date
+
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            start = modal.query_one('#input-start', Input)
+            due = modal.query_one('#input-due', Input)
+            start.value = ''
+            due.value = '2026-12-31'
+            start.focus()
+            await pilot.pause()
+            await modal.action_pick_date()
+            await pilot.pause()
+            cal = app.screen
+            cal.selected = date(2026, 6, 15)
+            cal._refresh_display()
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+
+            assert start.value == '2026-06-15'
+            assert due.value == '2026-06-15'
+
+    async def test_calendar_receives_busy_days_from_client(
+        self, tasks: list
+    ) -> None:
+        """Busy-day coloring depends on the CalendarModal receiving busy_days from the client."""
+        from datetime import date
+
+        from textual.widgets import Input
+
+        from op.tui.calendar_modal import CalendarModal
+
+        busy = {date(2026, 6, 20), date(2026, 6, 21)}
+
+        class BusyClient:
+            async def get_busy_days(self, principal_id: int) -> set[date]:
+                return busy
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+                return None
+
+        app = OpApp(tasks=tasks, config=_config(), client=BusyClient())
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.form.assignee_id = 5
+            modal.query_one('#input-start', Input).focus()
+            await pilot.pause()
+            await modal.action_pick_date()
+            await pilot.pause()
+            cal = app.screen
+            assert isinstance(cal, CalendarModal)
+            assert cal.busy_days == busy
+
     async def test_calendar_can_be_pushed_and_rendered(
         self, app_factory: T.Callable[..., OpApp]
     ) -> None:

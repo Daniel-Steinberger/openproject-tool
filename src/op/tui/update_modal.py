@@ -224,13 +224,15 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
     ) -> str | None:
         """Decide whether writing `picked_iso` into `target_id` should also populate Due.
 
-        Mirroring happens only when we're writing to the start field AND the due field
-        is currently empty. Returns the value to write into Due, or None to leave alone.
+        Per issue #10, changing the start date via shortcut/pick always drags the due
+        date along. The user can still edit due manually afterwards.
+        Returns the value to write into Due, or None when no mirror is needed
+        (target is not start, or start is being cleared).
         Pure function — no widget access — so it stays easy to unit-test.
         """
         if target_id != 'input-start':
             return None
-        if due_current.strip():
+        if not picked_iso:
             return None
         return picked_iso
 

@@ -7,7 +7,7 @@ from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Label
+from textual.widgets import Label
 
 from op.date_shortcuts import next_free_day
 
@@ -47,8 +47,12 @@ class CalendarModal(ModalScreen[date | None]):
         background: $panel;
         border: round $accent;
         padding: 1 2;
-        width: 60;
+        width: 38;
         height: auto;
+    }
+    CalendarModal #cal-help {
+        margin-top: 1;
+        color: $text-muted;
     }
     """
 
@@ -65,7 +69,7 @@ class CalendarModal(ModalScreen[date | None]):
         with Vertical():
             yield Label(self.selected.strftime('%B %Y'), id='cal-header')
             yield Label(self._build_grid(), id='cal-grid')
-            yield Footer()
+            yield Label(_HELP_TEXT, id='cal-help')
 
     # --- navigation ------------------------------------------------------
 
@@ -145,9 +149,9 @@ class CalendarModal(ModalScreen[date | None]):
     def _style_for(self, cell_date: date) -> str:
         """Rich style string for a day cell — selected > busy > weekend > default."""
         if cell_date == self.selected:
-            return 'bold black on bright_cyan'
+            return 'bold reverse blue'
         if cell_date in self.busy_days:
-            return 'black on yellow'
+            return 'bold white on red'
         if cell_date.weekday() >= 5:
             return 'dim'
         return ''
@@ -169,6 +173,13 @@ class CalendarModal(ModalScreen[date | None]):
                 cells.append(f'[{style}]{text}[/]' if style else text)
             lines.append(' '.join(cells))
         return '\n'.join(lines)
+
+
+_HELP_TEXT = (
+    '[dim]←→ day  ↑↓ week  PgUp/PgDn month[/dim]\n'
+    '[dim]Ctrl+T Today  Ctrl+N Next free[/dim]\n'
+    '[dim]Enter Pick  Esc Cancel[/dim]'
+)
 
 
 def _shift_months(d: date, delta: int) -> date:
