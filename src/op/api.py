@@ -8,6 +8,7 @@ import typing as T
 import httpx
 
 from op.models import (
+    Activity,
     CustomField,
     Priority,
     Project,
@@ -129,6 +130,10 @@ class OpenProjectClient:
         body = {'lockVersion': lock_version, **changes}
         data = await self._request('PATCH', f'/work_packages/{wp_id}', json=body)
         return WorkPackage.from_api(data)
+
+    async def get_activities(self, wp_id: int) -> list[Activity]:
+        elements = await self._get_collection(f'/work_packages/{wp_id}/activities')
+        return [Activity.from_api(e) for e in elements]
 
     async def add_comment(self, wp_id: int, text: str) -> None:
         await self._request(

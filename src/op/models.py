@@ -78,6 +78,24 @@ class User(_ApiModel):
         )
 
 
+class Activity(_ApiModel):
+    id: int
+    comment: str | None = None
+    user_name: str | None = None
+    created_at: str | None = None
+
+    @classmethod
+    def from_api(cls, payload: dict[str, T.Any]) -> Activity:
+        comment_raw = (payload.get('comment') or {}).get('raw') or None
+        links = payload.get('_links', {})
+        return cls(
+            id=payload['id'],
+            comment=comment_raw,
+            user_name=_link_title(links, 'user'),
+            created_at=payload.get('createdAt'),
+        )
+
+
 class CustomField(_ApiModel):
     id: int
     name: str
