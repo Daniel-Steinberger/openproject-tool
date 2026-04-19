@@ -91,7 +91,13 @@ async def run(
                 'Starting TUI: client=%s tasks=%d',
                 type(client).__name__, len(initial_tasks),
             )
-            app = OpApp(tasks=initial_tasks, config=config, client=client)
+            effective_config_path = config_path or default_config_path()
+            app = OpApp(
+                tasks=initial_tasks,
+                config=config,
+                client=client,
+                config_path=effective_config_path,
+            )
             await app.run_async()
             log.info('TUI exited cleanly')
             return 0

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing as T
 from enum import Enum
+from pathlib import Path
 
 from textual.app import App
 
@@ -48,11 +49,13 @@ class OpApp(App[None]):
         tasks: list[WorkPackage],
         config: Config,
         client: T.Any | None = None,
+        config_path: Path | None = None,
     ) -> None:
         super().__init__()
         self._initial_tasks = tasks
         self._config = config
         self._client = client
+        self.config_path: Path | None = config_path
         self.pending_ops: OperationQueue = OperationQueue()
 
     def on_mount(self) -> None:

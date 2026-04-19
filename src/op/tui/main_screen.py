@@ -57,6 +57,7 @@ class MainScreen(Screen[None]):
         Binding('u', 'update', 'Edit', show=True),
         Binding('g', 'review_queue', 'Apply', show=True),
         Binding('o', 'open_browser', 'Open', show=True),
+        Binding('p', 'toggle_project_filter', 'Filter', show=True),
         Binding('q', 'quit', 'Quit', show=True),
     ]
 
@@ -68,11 +69,20 @@ class MainScreen(Screen[None]):
         client: T.Any | None = None,
     ) -> None:
         super().__init__()
-        self.tasks = tasks
+        self.all_tasks = tasks          # full, unfiltered list
+        self.tasks = self._apply_filter(tasks, config)
         self.config = config
         self.client = client
         self.selection = Selection()
-        self._tasks_by_id = {t.id: t for t in tasks}
+        self._tasks_by_id = {t.id: t for t in self.tasks}
+
+    @staticmethod
+    def _apply_filter(tasks, config):  # noqa: ANN001, ANN205
+        """Return tasks visible under the current project-filter configuration."""
+        if not config.filter.project_filter_active:
+            return list(tasks)
+        irrelevant = set(config.filter.irrelevant_projects)
+        return [t for t in tasks if t.project_id not in irrelevant]
 
     def compose(self):  # noqa: ANN201
         yield Header()
@@ -134,6 +144,42 @@ class MainScreen(Screen[None]):
             return
         base_url = self.config.connection.base_url.rstrip('/')
         webbrowser.open(f'{base_url}/work_packages/{task_id}')
+
+    def action_toggle_project_filter(self) -> None:
+        """Toggle the project filter on/off and persist the new state."""
+        from op.config import update_filter
+
+        new_state = not self.config.filter.project_filter_active
+        self.config.filter.project_filter_active = new_state
+        self.tasks = self._apply_filter(self.all_tasks, self.config)
+        self._tasks_by_id = {t.id: t for t in self.tasks}
+        # Drop selection markers for rows that no longer exist
+        self.selection = Selection()
+        self._rebuild_rows()
+        # Persist to config file
+        path = getattr(self.app, 'config_path', None)
+        if path is not None:
+            try:
+                update_filter(path, project_filter_active=new_state)
+            except Exception:  # noqa: BLE001
+                log.exception('Failed to persist project filter state')
+        self._update_state_label()
+
+    def _rebuild_rows(self) -> None:
+        table = self.query_one('#task-list', DataTable)
+        table.clear()
+        for task in self.tasks:
+            pending = self._queue().get(task.id)
+            count = _count_changed_fields(pending.form) if pending else 0
+            table.add_row(
+                _selection_mark(False),
+                _queue_mark(count),
+                f'OP#{task.id}',
+                task.status_name,
+                task.type_name,
+                task.subject,
+                key=str(task.id),
+            )
 
     def action_review_queue(self) -> None:
         """Open the review screen — or notify if the queue is empty."""
