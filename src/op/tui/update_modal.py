@@ -6,6 +6,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Label, Select, TextArea
 
 from op.config import RemoteConfig
+from op.date_shortcuts import parse_shortcut
 from op.models import WorkPackage
 from op.tui.update_form import UpdateForm
 
@@ -90,13 +91,13 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                     yield Label('Start:')
                     yield Input(
                         value=_iso(self._wp.start_date if self._wp else None),
-                        placeholder='YYYY-MM-DD',
+                        placeholder='YYYY-MM-DD, today, +7, mon, next',
                         id='input-start',
                     )
                     yield Label('Due:')
                     yield Input(
                         value=_iso(self._wp.due_date if self._wp else None),
-                        placeholder='YYYY-MM-DD',
+                        placeholder='YYYY-MM-DD, today, +7, mon, next',
                         id='input-due',
                     )
                     yield Label('Description:')
@@ -132,13 +133,25 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         if new_subject != self._wp.subject:
             self.form.subject = new_subject
 
-        new_start = self.query_one('#input-start', Input).value.strip()
-        if new_start != _iso(self._wp.start_date):
-            self.form.start_date = new_start or None
+        original_start = _iso(self._wp.start_date)
+        original_due = _iso(self._wp.due_date)
+        new_start_raw = self.query_one('#input-start', Input).value.strip()
+        new_due_raw = self.query_one('#input-due', Input).value.strip()
 
-        new_due = self.query_one('#input-due', Input).value.strip()
-        if new_due != _iso(self._wp.due_date):
-            self.form.due_date = new_due or None
+        resolved_start = _resolve_date_field(new_start_raw)
+        resolved_due = _resolve_date_field(new_due_raw)
+
+        start_changed = resolved_start != original_start
+        due_changed = resolved_due != original_due
+
+        if start_changed:
+            self.form.start_date = resolved_start or None
+            # Auto-copy to due-date when user didn't set it explicitly.
+            if not due_changed and not resolved_due:
+                self.form.due_date = resolved_start or None
+
+        if due_changed:
+            self.form.due_date = resolved_due or None
 
         new_desc = self.query_one('#ta-description', TextArea).text
         if new_desc != (self._wp.description or ''):
@@ -156,6 +169,14 @@ def _iso(value) -> str:  # noqa: ANN001
     if value is None:
         return ''
     return value.isoformat() if hasattr(value, 'isoformat') else str(value)
+
+
+def _resolve_date_field(raw: str) -> str:
+    """Expand a date shortcut (today, +7, mon, …) to ISO. Returns '' for empty input."""
+    if not raw:
+        return ''
+    resolved = parse_shortcut(raw)
+    return resolved.isoformat() if resolved is not None else raw
 
 
 def _make_select(

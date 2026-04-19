@@ -208,3 +208,71 @@ class TestSingleTaskAllFields:
             # Scalar inputs must NOT be present
             assert not modal.query('#input-subject')
             assert not modal.query('#ta-description')
+
+
+class TestDateShortcuts:
+    async def test_start_shortcut_expands_and_sets_due_automatically(
+        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+    ) -> None:
+        """`today` shortcut in start-date expands + auto-copies to due-date."""
+        from datetime import date
+
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-start', Input).value = 'today'
+            await pilot.press('g')
+            await pilot.pause()
+
+        today_iso = date.today().isoformat()
+        assert len(client.updates) == 1
+        _, _, changes = client.updates[0]
+        assert changes['startDate'] == today_iso
+        assert changes['dueDate'] == today_iso
+
+    async def test_explicit_due_not_overwritten(
+        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+    ) -> None:
+        """If user sets both start and due explicitly, due is kept as-is."""
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-start', Input).value = '2026-05-01'
+            modal.query_one('#input-due', Input).value = '2026-05-15'
+            await pilot.press('g')
+            await pilot.pause()
+
+        _, _, changes = client.updates[0]
+        assert changes['startDate'] == '2026-05-01'
+        assert changes['dueDate'] == '2026-05-15'
+
+    async def test_plus_days_shortcut(
+        self, app_factory: T.Callable[..., OpApp], client: FakeClient
+    ) -> None:
+        from datetime import date, timedelta
+
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-start', Input).value = '+7'
+            await pilot.press('g')
+            await pilot.pause()
+
+        expected = (date.today() + timedelta(days=7)).isoformat()
+        _, _, changes = client.updates[0]
+        assert changes['startDate'] == expected
