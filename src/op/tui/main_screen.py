@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing as T
+import webbrowser
 
 from rich.text import Text
 from textual.binding import Binding
@@ -35,6 +36,7 @@ class MainScreen(Screen[None]):
         Binding('space', 'toggle_selected', 'Toggle', show=True),
         Binding('i', 'invert_selection', 'Invert', show=True),
         Binding('u', 'update', 'Update', show=True),
+        Binding('o', 'open_browser', 'Open', show=True),
         Binding('q', 'quit', 'Quit', show=True),
     ]
 
@@ -91,6 +93,13 @@ class MainScreen(Screen[None]):
 
     def action_quit(self) -> None:
         self.app.exit()
+
+    def action_open_browser(self) -> None:
+        task_id = self._current_task_id()
+        if task_id is None:
+            return
+        base_url = self.config.connection.base_url.rstrip('/')
+        webbrowser.open(f'{base_url}/work_packages/{task_id}')
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.row_key.value is None:

@@ -130,6 +130,21 @@ class TestEdit:
             assert isinstance(app.screen, UpdateModal)
 
 
+class TestOpenInBrowser:
+    async def test_o_opens_current_task_in_browser(
+        self, app_factory: T.Callable[..., OpApp], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        opened: list[str] = []
+        monkeypatch.setattr('webbrowser.open', lambda url: opened.append(url))
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('o')
+            await pilot.pause()
+        assert opened == ['https://op.example.com/work_packages/1']
+
+
 class TestComment:
     async def test_c_opens_comment_modal(
         self, app_factory: T.Callable[..., OpApp]

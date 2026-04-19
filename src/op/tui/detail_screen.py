@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing as T
+import webbrowser
 
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -22,6 +23,7 @@ class DetailScreen(Screen[None]):
         Binding('escape', 'close', 'Back', show=False),
         Binding('e', 'edit', 'Edit', show=True),
         Binding('c', 'comment', 'Comment', show=True),
+        Binding('o', 'open_browser', 'Open', show=True),
     ]
 
     DEFAULT_CSS = """
@@ -106,6 +108,10 @@ class DetailScreen(Screen[None]):
 
     def action_close(self) -> None:
         self.app.pop_screen()
+
+    def action_open_browser(self) -> None:
+        base_url = self.config.connection.base_url.rstrip('/')
+        webbrowser.open(f'{base_url}/work_packages/{self.wp.id}')
 
     def action_edit(self) -> None:
         modal = UpdateModal(remote=self.config.remote, target_count=1)

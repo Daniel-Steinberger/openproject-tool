@@ -124,3 +124,28 @@ class TestQuit:
             await pilot.press('q')
             await pilot.pause()
         assert app._exit
+
+
+class TestOpenInBrowser:
+    async def test_o_opens_current_task_in_browser(
+        self, app_factory: T.Callable[..., OpApp], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        opened: list[str] = []
+        monkeypatch.setattr('webbrowser.open', lambda url: opened.append(url))
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('o')
+            await pilot.pause()
+        assert opened == ['https://op.example.com/work_packages/1']
+
+    async def test_o_follows_cursor(
+        self, app_factory: T.Callable[..., OpApp], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        opened: list[str] = []
+        monkeypatch.setattr('webbrowser.open', lambda url: opened.append(url))
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('down', 'down')
+            await pilot.press('o')
+            await pilot.pause()
+        assert opened == ['https://op.example.com/work_packages/3']
