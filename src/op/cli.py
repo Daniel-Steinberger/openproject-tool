@@ -11,6 +11,7 @@ from rich.text import Text
 from op.actions import load_remote_data
 from op.api import AuthError, OpenProjectClient, OpenProjectError
 from op.config import Config, default_config_path, get_api_key, load_config
+from op.logging_setup import setup_logging
 from op.models import WorkPackage
 from op.search import build_api_filters, parse
 from op.tui.app import OpApp
@@ -65,6 +66,7 @@ async def run(
     if config is None:
         config_path = config_path or default_config_path()
         config = load_config(config_path)
+    setup_logging(config)
     api_key = get_api_key(config)
     if not api_key:
         Console(stderr=True).print(

@@ -31,6 +31,14 @@ status = ["open"]
 type = ["Task", "Bug", "Feature"]
 
 
+[logging]
+# Diagnostic log — useful for debugging API errors, TUI issues and update failures.
+# Level: DEBUG, INFO (default), WARNING, ERROR
+# File defaults to $XDG_STATE_HOME/openproject-tool/op.log (or ~/.local/state/…)
+# level = "INFO"
+# file = "/path/to/op.log"
+
+
 [remote]
 # This section is auto-populated by: op --load-remote-data
 # Do not edit manually — your changes will be overwritten.
@@ -71,10 +79,16 @@ class RemoteConfig(BaseModel):
     custom_fields: dict[int, str] = Field(default_factory=dict)
 
 
+class LoggingConfig(BaseModel):
+    level: str = 'INFO'
+    file: Path | None = None
+
+
 class Config(BaseModel):
     connection: ConnectionConfig
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     remote: RemoteConfig = Field(default_factory=RemoteConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 
 def default_config_path() -> Path:
@@ -147,4 +161,5 @@ def _normalise(data: dict[str, T.Any]) -> dict[str, T.Any]:
     data.setdefault('connection', {})
     data.setdefault('defaults', {})
     data.setdefault('remote', {})
+    data.setdefault('logging', {})
     return data

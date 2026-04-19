@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import typing as T
+
+log = logging.getLogger(__name__)
 
 from rich.text import Text
 from textual.binding import Binding
@@ -136,7 +139,13 @@ class ApplyingScreen(Screen[None]):
 
     async def _apply_single(self, op) -> bool:  # noqa: ANN001
         if self.client is None:
-            op.error = 'no client configured'
+            op.error = 'internal error: ApplyingScreen has no client reference'
+            log.error(
+                'OP#%s apply aborted — self.client is None. ReviewScreen.client type=%s',
+                op.task_id,
+                type(self.app.screen_stack[-2]).__name__
+                if len(self.app.screen_stack) > 1 else 'n/a',
+            )
             return False
         main_screen = self._find_main_screen()
         wp = main_screen._tasks_by_id.get(op.task_id) if main_screen else None
@@ -146,8 +155,13 @@ class ApplyingScreen(Screen[None]):
                 op.task_id, lock_version=lock_version, changes=op.form.api_changes()
             )
         except Exception as exc:  # noqa: BLE001
-            op.error = str(exc)
+            op.error = str(exc) or exc.__class__.__name__
+            log.exception(
+                'OP#%s update failed (lock=%s): %s',
+                op.task_id, lock_version, exc,
+            )
             return False
+        log.info('OP#%s updated', op.task_id)
         if fresh is not None and main_screen is not None:
             main_screen.refresh_row(fresh)
         return True
