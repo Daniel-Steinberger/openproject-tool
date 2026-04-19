@@ -68,8 +68,9 @@ class DetailScreen(Screen[None]):
     }
     DetailScreen #search-bar {
         dock: bottom;
-        height: 3;
-        background: $boost;
+        height: 1;
+        background: cyan;
+        color: black;
         display: none;
     }
     DetailScreen #search-bar.visible {
@@ -77,13 +78,22 @@ class DetailScreen(Screen[None]):
     }
     DetailScreen #search-input {
         width: 1fr;
-        background: $surface;
-        color: $text;
+        height: 1;
+        padding: 0 1;
+        border: none;
+        background: cyan;
+        color: black;
+    }
+    DetailScreen #search-input:focus {
+        border: none;
     }
     DetailScreen #search-status {
         width: auto;
-        padding: 1 1;
-        color: $text-muted;
+        height: 1;
+        padding: 0 1;
+        background: cyan;
+        color: black;
+        text-style: bold;
     }
     DetailScreen .search-hit-current {
         border-left: thick $warning;
