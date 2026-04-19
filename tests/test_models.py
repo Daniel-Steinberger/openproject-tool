@@ -215,6 +215,7 @@ class TestActivity:
         assert a.id == 77
         assert a.comment == 'Ein Kommentar'
         assert a.user_name == 'Max'
+        assert a.user_id == 5
         assert a.created_at == '2026-01-01T10:00:00Z'
 
     def test_from_api_without_comment(self) -> None:
@@ -227,6 +228,36 @@ class TestActivity:
         }
         a = Activity.from_api(payload)
         assert a.comment is None
+
+    def test_from_api_extracts_user_id_when_title_missing(self) -> None:
+        """Guest-accounts / external activities sometimes omit title — fall back to id."""
+        payload = {
+            '_type': 'Activity::Comment',
+            'id': 77,
+            'createdAt': '2026-01-01T10:00:00Z',
+            'comment': {'raw': 'x'},
+            '_links': {'user': {'href': '/api/v3/users/42'}},
+        }
+        a = Activity.from_api(payload)
+        assert a.user_name is None
+        assert a.user_id == 42
+
+    def test_from_api_captures_html_alongside_raw(self) -> None:
+        """OpenProject stores richly-formatted content (tables, headings) in the html field."""
+        payload = {
+            '_type': 'Activity::Comment',
+            'id': 77,
+            'createdAt': '2026-01-01T10:00:00Z',
+            'comment': {
+                'raw': 'intro text',
+                'html': '<p>intro text</p><table><tr><th>a</th></tr></table>',
+                'format': 'markdown',
+            },
+            '_links': {'user': {'href': '/api/v3/users/5', 'title': 'Max'}},
+        }
+        a = Activity.from_api(payload)
+        assert a.comment_html is not None
+        assert '<table' in a.comment_html
 
 
 class TestIdExtraction:

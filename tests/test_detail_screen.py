@@ -324,6 +324,82 @@ class TestSearch:
             assert input_.has_focus
 
 
+class TestActivityUserFallback:
+    async def test_user_resolved_via_remote_when_title_missing(
+        self, tasks: list
+    ) -> None:
+        """When link has no title, fall back to the remote.users lookup by user_id."""
+        from textual.widgets import Label
+
+        class ClientWithAnonymousActivity:
+            async def get_activities(self, wp_id):  # noqa: ANN001, ANN202
+                return [
+                    Activity(
+                        id=1, comment='hi', user_name=None, user_id=5,
+                        created_at='2026-01-01',
+                    )
+                ]
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        cfg = _config()
+        cfg.remote.users[5] = 'Max Mustermann'
+        app = OpApp(tasks=tasks, config=cfg, client=ClientWithAnonymousActivity())
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            heads = app.screen.query('.activity-head')
+            assert heads
+            rendered = str(heads.first(Label).render())
+            assert 'Max Mustermann' in rendered
+            assert '(unknown)' not in rendered
+
+
+class TestActivityHtmlContent:
+    async def test_table_in_html_is_rendered_as_markdown_table(
+        self, tasks: list
+    ) -> None:
+        from textual.widgets import Markdown
+
+        html_body = (
+            '<p>intro</p>'
+            '<table><tr><th>Stufe</th><th>Art</th></tr>'
+            '<tr><td>1</td><td>DVS-Rechnung</td></tr></table>'
+        )
+
+        class ClientWithTableComment:
+            async def get_activities(self, wp_id):  # noqa: ANN001, ANN202
+                return [
+                    Activity(
+                        id=1,
+                        comment='intro',
+                        comment_html=html_body,
+                        user_name='Max',
+                        user_id=5,
+                    )
+                ]
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        app = OpApp(tasks=tasks, config=_config(), client=ClientWithTableComment())
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            markdowns = app.screen.query('#activities Markdown')
+            assert len(markdowns) == 1
+            source = markdowns.first(Markdown)._markdown
+            assert 'Stufe' in source
+            assert 'DVS-Rechnung' in source
+
+
 class TestMarkdownActivities:
     async def test_each_activity_rendered_as_markdown(
         self, app_factory: T.Callable[..., OpApp]
