@@ -29,6 +29,16 @@ class OpApp(App[None]):
     }
     #task-list {
         height: 1fr;
+        scrollbar-size-horizontal: 0;
+        overflow-x: hidden;
+    }
+    #review-table {
+        scrollbar-size-horizontal: 0;
+        overflow-x: hidden;
+    }
+    #applying-table {
+        scrollbar-size-horizontal: 0;
+        overflow-x: hidden;
     }
     """
 
