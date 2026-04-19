@@ -41,6 +41,10 @@ class OpApp(App[None]):
         scrollbar-size-horizontal: 0;
         overflow-x: hidden;
     }
+    #filter-table {
+        scrollbar-size-horizontal: 0;
+        overflow-x: hidden;
+    }
     """
 
     def __init__(
@@ -57,6 +61,11 @@ class OpApp(App[None]):
         self._client = client
         self.config_path: Path | None = config_path
         self.pending_ops: OperationQueue = OperationQueue()
+        # Register our command-palette provider alongside Textual's defaults.
+        # Assigning at instance level works because App checks self.COMMANDS at runtime.
+        from op.tui.project_filter_screen import ProjectFilterProvider
+
+        self.COMMANDS = App.COMMANDS | {ProjectFilterProvider}
 
     def on_mount(self) -> None:
         self.push_screen(
@@ -72,4 +81,6 @@ class OpApp(App[None]):
         count = self.pending_ops.count
         if count:
             parts.append(f'({count} pending)')
+        if state is AppState.SELECTOR and self._config.filter.project_filter_active:
+            parts.append('[filter on]')
         self.sub_title = ' '.join(parts)
