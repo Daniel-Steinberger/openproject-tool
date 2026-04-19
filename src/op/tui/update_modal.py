@@ -11,6 +11,7 @@ from textual.widgets import Footer, Input, Label, Select, TextArea
 from op.config import RemoteConfig
 from op.date_shortcuts import next_free_day, parse_shortcut
 from op.models import WorkPackage
+from op.tui.calendar_modal import CalendarModal
 from op.tui.update_form import UpdateForm
 
 _WORKLOAD_SHORTCUTS = {'next', 'nf'}
@@ -29,6 +30,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         Binding('g', 'apply', 'Apply', show=True),
         Binding('q', 'cancel', 'Cancel', show=True),
         Binding('escape', 'cancel', 'Cancel', show=False),
+        Binding('ctrl+d', 'pick_date', 'Calendar', show=True, priority=True),
     ]
 
     DEFAULT_CSS = """
@@ -173,6 +175,40 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    async def action_pick_date(self) -> None:
+        """Open a calendar popup for the currently-focused start/due input."""
+        target_input = self._focused_date_input()
+        if target_input is None:
+            return
+
+        initial = parse_shortcut(target_input.value) or (self._today_override or date.today())
+        busy = await self._load_busy_days_silent()
+
+        def _on_pick(picked: date | None) -> None:
+            if picked is not None:
+                target_input.value = picked.isoformat()
+
+        self.app.push_screen(
+            CalendarModal(initial=initial, busy_days=busy), _on_pick
+        )
+
+    def _focused_date_input(self) -> Input | None:
+        focused = self.focused
+        if isinstance(focused, Input) and focused.id in ('input-start', 'input-due'):
+            return focused
+        return None
+
+    async def _load_busy_days_silent(self) -> set[date]:
+        if self._client is None:
+            return set()
+        principal_id = self._effective_assignee_id()
+        if principal_id is None:
+            return set()
+        try:
+            return await self._client.get_busy_days(principal_id)
+        except Exception:  # noqa: BLE001
+            return set()
 
     async def _apply_workload_shortcut_if_needed(self) -> None:
         """Replace the `next`/`nf` start-date with a workload-aware free day."""

@@ -278,6 +278,93 @@ class TestDateShortcuts:
         assert changes['startDate'] == expected
 
 
+class TestCalendarPopup:
+    """Calendar popup integration — tests the focus-detection and input target logic.
+
+    The two-deep ModalScreen rendering is buggy in this Textual version's pilot harness,
+    so we assert on `_focused_date_input()` rather than simulating push_screen.
+    """
+
+    async def test_focused_date_input_returns_start_when_start_focused(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-start', Input).focus()
+            await pilot.pause()
+            target = modal._focused_date_input()
+            assert target is not None
+            assert target.id == 'input-start'
+
+    async def test_focused_date_input_returns_due_when_due_focused(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-due', Input).focus()
+            await pilot.pause()
+            target = modal._focused_date_input()
+            assert target is not None
+            assert target.id == 'input-due'
+
+    async def test_focused_date_input_is_none_when_other_widget_focused(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-subject', Input).focus()
+            await pilot.pause()
+            assert modal._focused_date_input() is None
+
+    async def test_load_busy_days_returns_empty_without_client(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            modal._client = None  # type: ignore[attr-defined]
+            busy = await modal._load_busy_days_silent()
+        assert busy == set()
+
+    async def test_load_busy_days_swallows_api_errors(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        app = app_factory()
+
+        class BadClient:
+            async def get_busy_days(self, principal_id: int):  # noqa: ANN001, ANN201
+                raise RuntimeError('network down')
+
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            modal._client = BadClient()  # type: ignore[attr-defined]
+            modal.form.assignee_id = 5
+            busy = await modal._load_busy_days_silent()
+        assert busy == set()
+
+
 class TestWorkloadShortcut:
     async def test_next_uses_busy_days_when_client_available(
         self, tasks: list, monkeypatch
