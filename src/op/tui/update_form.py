@@ -18,6 +18,7 @@ class UpdateForm:
         self._type_id: int | None = None
         self._priority_id: int | None = None
         self._assignee_id: int | None = None
+        self._assignee_is_group: bool = False
         self._unassign: bool = False
         self._subject: str | None = None
         self._description: str | None = None
@@ -57,8 +58,15 @@ class UpdateForm:
     @assignee_id.setter
     def assignee_id(self, value: int | None) -> None:
         self._assignee_id = value
+        self._assignee_is_group = False
         if value is not None:
             self._unassign = False
+
+    def set_assignee(self, *, principal_id: int, is_group: bool) -> None:
+        """Explicitly set an assignee by principal ID and kind (user vs. group)."""
+        self._assignee_id = principal_id
+        self._assignee_is_group = is_group
+        self._unassign = False
 
     @property
     def unassign(self) -> bool:
@@ -121,7 +129,8 @@ class UpdateForm:
         if self._priority_id is not None:
             links['priority'] = {'href': f'/api/v3/priorities/{self._priority_id}'}
         if self._assignee_id is not None:
-            links['assignee'] = {'href': f'/api/v3/users/{self._assignee_id}'}
+            kind = 'groups' if self._assignee_is_group else 'users'
+            links['assignee'] = {'href': f'/api/v3/{kind}/{self._assignee_id}'}
         elif self._unassign:
             links['assignee'] = {'href': None}
         if links:

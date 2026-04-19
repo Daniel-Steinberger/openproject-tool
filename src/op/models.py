@@ -78,6 +78,15 @@ class User(_ApiModel):
         )
 
 
+class Group(_ApiModel):
+    id: int
+    name: str
+
+    @classmethod
+    def from_api(cls, payload: dict[str, T.Any]) -> Group:
+        return cls(id=payload['id'], name=payload['name'])
+
+
 class Activity(_ApiModel):
     id: int
     comment: str | None = None

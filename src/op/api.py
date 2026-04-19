@@ -11,6 +11,7 @@ import httpx
 from op.models import (
     Activity,
     CustomField,
+    Group,
     Priority,
     Project,
     Status,
@@ -80,6 +81,10 @@ class OpenProjectClient:
     async def get_users(self) -> list[User]:
         elements = await self._get_collection('/users')
         return [User.from_api(e) for e in elements]
+
+    async def get_groups(self) -> list[Group]:
+        elements = await self._get_collection('/groups')
+        return [Group.from_api(e) for e in elements]
 
     async def get_custom_fields(
         self, *, project_ids: list[int], type_ids: list[int]

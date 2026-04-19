@@ -17,12 +17,13 @@ async def load_remote_data(client: OpenProjectClient, config_path: Path) -> None
     are loaded in a second pass after the primary metadata. Missing endpoints
     (HTTP 404) are skipped with a warning — remaining metadata is still synced.
     """
-    statuses, types, priorities, projects, users = await asyncio.gather(
+    statuses, types, priorities, projects, users, groups = await asyncio.gather(
         _safe_fetch('statuses', client.get_statuses),
         _safe_fetch('types', client.get_types),
         _safe_fetch('priorities', client.get_priorities),
         _safe_fetch('projects', client.get_projects),
         _safe_fetch('users', client.get_users),
+        _safe_fetch('groups', client.get_groups),
     )
     custom_fields = await _safe_fetch(
         'custom_fields',
@@ -38,6 +39,7 @@ async def load_remote_data(client: OpenProjectClient, config_path: Path) -> None
         priorities={p.id: p.name for p in priorities},
         projects={p.id: p.name for p in projects},
         users={u.id: u.name for u in users},
+        groups={g.id: g.name for g in groups},
         custom_fields={cf.id: cf.name for cf in custom_fields},
     )
 

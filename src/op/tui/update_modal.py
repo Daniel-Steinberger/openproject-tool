@@ -80,7 +80,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                 yield Label('Priority:')
                 yield _make_select(self._remote.priorities, id='sel-priority')
                 yield Label('Assignee:')
-                yield _make_select(self._remote.users, id='sel-assignee')
+                yield _make_assignee_select(self._remote.users, self._remote.groups)
                 if self._show_scalars:
                     yield Label('Subject:')
                     yield Input(
@@ -104,17 +104,26 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             yield Footer()
 
     def on_select_changed(self, event: Select.Changed) -> None:
+        select_id = event.select.id or ''
+        value = None if event.value is Select.BLANK else event.value
+
+        if select_id == 'sel-assignee':
+            if value is None:
+                self.form.assignee_id = None
+                return
+            # Option values are tagged "u:<id>" or "g:<id>" — see _make_assignee_select.
+            kind, raw_id = str(value).split(':', 1)
+            self.form.set_assignee(principal_id=int(raw_id), is_group=(kind == 'g'))
+            return
+
         field_map = {
             'sel-status': 'status_id',
             'sel-type': 'type_id',
             'sel-priority': 'priority_id',
-            'sel-assignee': 'assignee_id',
         }
-        attr = field_map.get(event.select.id or '')
-        if attr is None:
-            return
-        value = None if event.value is Select.BLANK else event.value
-        setattr(self.form, attr, value)
+        attr = field_map.get(select_id)
+        if attr is not None:
+            setattr(self.form, attr, value)
 
     def _sync_scalar_inputs_to_form(self) -> None:
         if not self._show_scalars or self._wp is None:
@@ -158,3 +167,17 @@ def _make_select(
         id=id,
         allow_blank=True,
     )
+
+
+def _make_assignee_select(
+    users: dict[int, str], groups: dict[int, str]
+) -> Select[str]:
+    """Users + groups in one dropdown; option value carries kind prefix u:/g:."""
+    options: list[tuple[str, str]] = [
+        (name, f'u:{uid}') for uid, name in sorted(users.items(), key=lambda x: x[1])
+    ]
+    options += [
+        (f'[Group] {name}', f'g:{gid}')
+        for gid, name in sorted(groups.items(), key=lambda x: x[1])
+    ]
+    return Select[str](options, prompt='— no change —', id='sel-assignee', allow_blank=True)

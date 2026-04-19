@@ -8,14 +8,15 @@ from op.config import DefaultsConfig, RemoteConfig
 
 log = logging.getLogger(__name__)
 
-_FILTER_KEY_MAP: dict[str, tuple[str, str]] = {
-    # user-facing key: (OpenProject filter key, RemoteConfig attribute)
-    'type': ('type_id', 'types'),
-    'status': ('status_id', 'statuses'),
-    'priority': ('priority_id', 'priorities'),
-    'project': ('project_id', 'projects'),
-    'assignee': ('assignee_id', 'users'),
-    'author': ('author_id', 'users'),
+_FILTER_KEY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
+    # user-facing key: (OpenProject filter key, lookup sources on RemoteConfig)
+    # Note: OpenProject uses "assigned_to_id" and "author_id" — not "assignee_id".
+    'type': ('type_id', ('types',)),
+    'status': ('status_id', ('statuses',)),
+    'priority': ('priority_id', ('priorities',)),
+    'project': ('project_id', ('projects',)),
+    'assignee': ('assigned_to_id', ('users', 'groups')),
+    'author': ('author_id', ('users',)),
 }
 
 
@@ -107,13 +108,15 @@ def build_api_filters(
         if key not in _FILTER_KEY_MAP:
             valid = ', '.join(sorted(_FILTER_KEY_MAP))
             raise ValueError(f'Unknown filter key: {key!r}. Valid keys: {valid}')
-        op_key, remote_attr = _FILTER_KEY_MAP[key]
-        lookup: dict[int, str] = getattr(remote, remote_attr)
+        op_key, remote_attrs = _FILTER_KEY_MAP[key]
+        merged_lookup: dict[int, str] = {}
+        for attr in remote_attrs:
+            merged_lookup.update(getattr(remote, attr))
         is_default = key in query.default_filter_keys
 
         resolved_ids: list[str] = []
         for value in values:
-            entity_id = _lookup_name(value, lookup)
+            entity_id = _lookup_name(value, merged_lookup)
             if entity_id is None:
                 if is_default:
                     log.warning(
@@ -122,7 +125,9 @@ def build_api_filters(
                         value,
                     )
                     continue
-                valid_values = ', '.join(sorted(lookup.values())) or '(none loaded)'
+                valid_values = (
+                    ', '.join(sorted(merged_lookup.values())) or '(none loaded)'
+                )
                 raise ValueError(
                     f'Unknown {key} value: {value!r}. Valid values: {valid_values}'
                 )

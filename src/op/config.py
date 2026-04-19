@@ -43,6 +43,8 @@ type = ["Task", "Bug", "Feature"]
 
 [remote.users]
 
+[remote.groups]
+
 [remote.projects]
 
 [remote.custom_fields]
@@ -64,6 +66,7 @@ class RemoteConfig(BaseModel):
     types: dict[int, str] = Field(default_factory=dict)
     priorities: dict[int, str] = Field(default_factory=dict)
     users: dict[int, str] = Field(default_factory=dict)
+    groups: dict[int, str] = Field(default_factory=dict)
     projects: dict[int, str] = Field(default_factory=dict)
     custom_fields: dict[int, str] = Field(default_factory=dict)
 
@@ -107,6 +110,7 @@ def update_remote(
     types: dict[int, str] | None = None,
     priorities: dict[int, str] | None = None,
     users: dict[int, str] | None = None,
+    groups: dict[int, str] | None = None,
     projects: dict[int, str] | None = None,
     custom_fields: dict[int, str] | None = None,
 ) -> None:
@@ -123,6 +127,7 @@ def update_remote(
         'types': types,
         'priorities': priorities,
         'users': users,
+        'groups': groups,
         'projects': projects,
         'custom_fields': custom_fields,
     }
