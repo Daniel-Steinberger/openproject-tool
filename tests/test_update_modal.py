@@ -386,11 +386,12 @@ class TestCalendarPopup:
             modal = app.screen
             assert isinstance(modal, UpdateModal)
             modal.form.assignee_id = 5
-            modal.query_one('#input-start', Input).focus()
+            start_input = modal.query_one('#input-start', Input)
+            start_input.focus()
             modal._today_override = today  # type: ignore[attr-defined]
             await pilot.pause()
             await modal.action_insert_next_free()
-        assert modal.query_one('#input-start', Input).value == expected.isoformat()
+            assert start_input.value == expected.isoformat()
 
     async def test_calendar_can_be_pushed_and_rendered(
         self, app_factory: T.Callable[..., OpApp]

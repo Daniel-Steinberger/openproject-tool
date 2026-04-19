@@ -30,8 +30,13 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         Binding('g', 'apply', 'Apply', show=True),
         Binding('q', 'cancel', 'Cancel', show=True),
         Binding('escape', 'cancel', 'Cancel', show=False),
+        # Date-shortcut bindings — shown conditionally via check_action()
         Binding('ctrl+d', 'pick_date', 'Calendar', show=True, priority=True),
+        Binding('ctrl+t', 'insert_today', 'Today', show=True, priority=True),
+        Binding('ctrl+n', 'insert_next_free', 'Next free', show=True, priority=True),
     ]
+
+    _DATE_ONLY_ACTIONS = frozenset({'pick_date', 'insert_today', 'insert_next_free'})
 
     DEFAULT_CSS = """
     UpdateModal {
@@ -175,6 +180,38 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        """Hide date-shortcut bindings from the footer when no date input is focused."""
+        if action in self._DATE_ONLY_ACTIONS and self._focused_date_input() is None:
+            return False
+        return True
+
+    def action_insert_today(self) -> None:
+        """Ctrl+T — fill the focused date input with today."""
+        target = self._focused_date_input()
+        if target is None:
+            return
+        today = self._today_override or date.today()
+        self._set_date_input(target, today)
+
+    async def action_insert_next_free(self) -> None:
+        """Ctrl+N — fill the focused date input with the next workload-free workday."""
+        target = self._focused_date_input()
+        if target is None:
+            return
+        today = self._today_override or date.today()
+        busy = await self._load_busy_days_silent()
+        free = next_free_day(today, busy_days=busy)
+        self._set_date_input(target, free)
+
+    def _set_date_input(self, target: Input, value: date) -> None:
+        """Write `value` to `target` and, when filling Start and Due is empty, mirror to Due."""
+        target.value = value.isoformat()
+        if target.id == 'input-start':
+            due = self.query_one('#input-due', Input)
+            if not due.value.strip():
+                due.value = value.isoformat()
 
     async def action_pick_date(self) -> None:
         """Open a calendar popup for the currently-focused start/due input."""
