@@ -119,22 +119,49 @@ class DetailScreen(Screen[None]):
         )
 
         async def _apply(form: UpdateForm | None) -> None:
-            if form is None or self.client is None:
+            if form is None:
+                return
+            if self.client is None:
+                self.notify('No API client — changes not saved', severity='warning')
                 return
             changes = form.api_changes()
             if not changes:
+                self.notify('No changes to apply', severity='warning')
                 return
-            await self.client.update_work_package(
-                self.wp.id, lock_version=self.wp.lock_version, changes=changes
-            )
+            try:
+                fresh = await self.client.update_work_package(
+                    self.wp.id, lock_version=self.wp.lock_version, changes=changes
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.notify(f'Update failed: {exc}', severity='error', timeout=8)
+                return
+            if fresh is not None:
+                self.wp = fresh
+            self._refresh_header()
+            self.notify(f'Updated OP#{self.wp.id}', severity='information')
 
         self.app.push_screen(modal, _apply)
 
+    def _refresh_header(self) -> None:
+        """Re-render the meta-label after the wp was updated."""
+        try:
+            self.query_one('#meta', Label).update(self._meta_text())
+        except Exception:  # noqa: BLE001
+            pass
+
     def action_comment(self) -> None:
         async def _submit(text: str | None) -> None:
-            if not text or self.client is None:
+            if not text:
                 return
-            await self.client.add_comment(self.wp.id, text)
+            if self.client is None:
+                self.notify('No API client — comment not sent', severity='warning')
+                return
+            try:
+                await self.client.add_comment(self.wp.id, text)
+            except Exception as exc:  # noqa: BLE001
+                self.notify(f'Comment failed: {exc}', severity='error', timeout=8)
+                return
+            self.notify('Comment added', severity='information')
             await self._load_activities()
 
         self.app.push_screen(CommentModal(), _submit)

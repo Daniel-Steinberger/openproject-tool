@@ -278,6 +278,58 @@ class TestDateShortcuts:
         assert changes['startDate'] == expected
 
 
+class TestApplyThroughRealClient:
+    """Verify that pressing 'g' actually fires the HTTP PATCH via the real client."""
+
+    async def test_apply_sends_patch_to_openproject(
+        self, tasks: list, respx_mock
+    ) -> None:
+        import httpx
+        from textual.widgets import Input
+
+        from op.api import OpenProjectClient
+
+        base_url = 'https://op.example.com'
+        patch_route = respx_mock.patch(f'{base_url}/api/v3/work_packages/1').mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    '_type': 'WorkPackage',
+                    'id': 1,
+                    'subject': 'Neuer Titel',
+                    'description': {'raw': ''},
+                    'lockVersion': 2,
+                    '_links': {
+                        'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                        'status': {'href': '/api/v3/statuses/2', 'title': 'In Bearbeitung'},
+                        'project': {'href': '/api/v3/projects/10', 'title': 'Web'},
+                    },
+                },
+            )
+        )
+
+        async with OpenProjectClient(base_url, 'testkey') as client:
+            app = OpApp(tasks=tasks, config=_config(), client=client)
+            async with app.run_test() as pilot:
+                await pilot.press('u')
+                await pilot.pause()
+                modal = app.screen
+                assert isinstance(modal, UpdateModal)
+                # Change subject directly on the single-task form
+                modal.query_one('#input-subject', Input).value = 'Neuer Titel'
+                await pilot.press('g')
+                # Give any async callback/worker a chance to complete
+                await pilot.pause()
+                await pilot.pause()
+                await pilot.pause()
+
+        assert patch_route.called, 'Apply did not send a PATCH request to OpenProject'
+        import json
+        body = json.loads(patch_route.calls.last.request.content)
+        assert body['subject'] == 'Neuer Titel'
+        assert body['lockVersion'] == 1
+
+
 class TestCalendarPopup:
     """Calendar popup integration — focus detection, push, and rendering survival."""
 

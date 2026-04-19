@@ -123,20 +123,56 @@ class MainScreen(Screen[None]):
         )
 
         async def _apply(form: UpdateForm | None) -> None:
-            if form is None or self.client is None:
+            if form is None:
+                return
+            if self.client is None:
+                self.notify('No API client — changes not saved', severity='warning')
                 return
             changes = form.api_changes()
             if not changes:
+                self.notify('No changes to apply', severity='warning')
                 return
-            for task_id in target_ids:
-                wp = self._tasks_by_id.get(task_id)
-                if wp is None:
-                    continue
-                await self.client.update_work_package(
-                    task_id, lock_version=wp.lock_version, changes=changes
-                )
+            await self._apply_changes(list(target_ids), changes)
 
         self.app.push_screen(modal, _apply)
+
+    async def _apply_changes(self, target_ids: list[int], changes: dict) -> None:
+        """Send PATCH requests for each target task and report the result to the user."""
+        updated = 0
+        for task_id in target_ids:
+            wp = self._tasks_by_id.get(task_id)
+            if wp is None:
+                continue
+            try:
+                fresh = await self.client.update_work_package(
+                    task_id, lock_version=wp.lock_version, changes=changes
+                )
+            except Exception as exc:  # noqa: BLE001 — surface any API error to the user
+                self.notify(
+                    f'OP#{task_id} update failed: {exc}',
+                    severity='error',
+                    timeout=8,
+                )
+                continue
+            updated += 1
+            if fresh is not None:
+                self._tasks_by_id[task_id] = fresh
+                self._refresh_row(task_id, fresh)
+        if updated:
+            target = (
+                f'OP#{target_ids[0]}' if updated == 1 else f'{updated} tasks'
+            )
+            self.notify(f'Updated {target}', severity='information')
+
+    def _refresh_row(self, task_id: int, wp: WorkPackage) -> None:
+        """Rewrite the Status / Type / Subject cells so the list reflects the server state."""
+        table = self.query_one('#task-list', DataTable)
+        try:
+            table.update_cell(str(task_id), _COL_STATUS, wp.status_name)
+            table.update_cell(str(task_id), _COL_TYPE, wp.type_name)
+            table.update_cell(str(task_id), _COL_SUBJECT, wp.subject)
+        except Exception:  # noqa: BLE001 — row may have been removed
+            pass
 
     # --- internals -------------------------------------------------------
 
