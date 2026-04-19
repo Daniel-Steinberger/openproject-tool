@@ -7,7 +7,7 @@ import typing as T
 from rich.text import Text
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, ProgressBar
+from textual.widgets import DataTable, Footer, Header, ProgressBar, RichLog
 
 from op.config import Config
 
@@ -34,10 +34,21 @@ class ApplyingScreen(Screen[None]):
     ApplyingScreen #applying-table {
         height: 1fr;
     }
+    ApplyingScreen #applying-errors {
+        height: auto;
+        max-height: 10;
+        border-top: solid $error;
+        background: $panel;
+        padding: 0 1;
+        display: none;
+    }
+    ApplyingScreen #applying-errors.visible {
+        display: block;
+    }
     ApplyingScreen #applying-progress {
         dock: bottom;
+        width: 100%;
         height: 1;
-        margin: 1 0;
     }
     """
 
@@ -51,6 +62,7 @@ class ApplyingScreen(Screen[None]):
     def compose(self):  # noqa: ANN201
         yield Header()
         yield DataTable(id='applying-table', cursor_type='row', zebra_stripes=True)
+        yield RichLog(id='applying-errors', wrap=True, highlight=False, markup=True)
         yield ProgressBar(id='applying-progress', show_eta=False)
         yield Footer()
 
@@ -112,11 +124,7 @@ class ApplyingScreen(Screen[None]):
                 op.status = 'failed'
                 self._has_failures = True
                 table.update_cell(str(op.task_id), _COL_STATUS, _STATUS_MARK['failed'])
-                # Attach the error into the changes cell so the user sees it inline
-                suffix = Text(f'\n  └─ {op.error}', style='red')
-                base = self._changes_summary(op)
-                base.append(suffix)
-                table.update_cell(str(op.task_id), _COL_CHANGES, base)
+                self._log_error(op)
 
             progress.update(progress=index + 1)
 
@@ -143,6 +151,13 @@ class ApplyingScreen(Screen[None]):
         if fresh is not None and main_screen is not None:
             main_screen.refresh_row(fresh)
         return True
+
+    def _log_error(self, op) -> None:  # noqa: ANN001
+        """Append a failure line to the error log and reveal it."""
+        log = self.query_one('#applying-errors', RichLog)
+        if 'visible' not in log.classes:
+            log.add_class('visible')
+        log.write(f'[bold red]OP#{op.task_id}[/bold red] [red]{op.error}[/red]')
 
     def _find_main_screen(self):  # noqa: ANN202
         from op.tui.main_screen import MainScreen

@@ -115,6 +115,37 @@ class TestSuccessfulRun:
 
 
 class TestFailureRun:
+    async def test_failure_message_appears_in_error_log(
+        self, tasks: list
+    ) -> None:
+        """Regression: the failure message must be visible to the user, not silently logged."""
+        from textual.widgets import RichLog
+
+        client = FailingClient(fail_ids={2})
+        app = OpApp(tasks=tasks, config=_config(), client=client)
+        for tid in (1, 2, 3):
+            form = UpdateForm()
+            form.status_id = 2
+            app.pending_ops.add_or_merge(tid, form, original_subject=f'T{tid}')
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('g')
+            await pilot.pause()
+            await pilot.press('g')
+            for _ in range(20):
+                await pilot.pause()
+                screen = app.screen
+                if isinstance(screen, ApplyingScreen) and screen.is_done:
+                    break
+            log = app.screen.query_one('#applying-errors', RichLog)
+            # Error log is visible and contains the failure message
+            assert 'visible' in log.classes
+            # RichLog stores content as lines
+            rendered = ''.join(str(line) for line in log.lines)
+            assert 'OP#2' in rendered
+            assert 'locked' in rendered or 'Task 2' in rendered
+
     async def test_failures_keep_screen_open_and_leave_failed_ops_in_queue(
         self, tasks: list
     ) -> None:
