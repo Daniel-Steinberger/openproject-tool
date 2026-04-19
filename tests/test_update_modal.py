@@ -281,6 +281,117 @@ class TestDateShortcuts:
 class TestCalendarPopup:
     """Calendar popup integration — focus detection, push, and rendering survival."""
 
+    async def test_date_actions_hidden_when_non_date_input_focused(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Footer hints should only appear when a date input is focused."""
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-subject', Input).focus()
+            await pilot.pause()
+            # check_action returns False → Footer hides the binding
+            assert modal.check_action('pick_date', ()) is False
+            assert modal.check_action('insert_today', ()) is False
+            assert modal.check_action('insert_next_free', ()) is False
+            # Non-date actions stay available
+            assert modal.check_action('apply', ()) is True
+
+    async def test_date_actions_visible_when_start_input_focused(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            modal.query_one('#input-start', Input).focus()
+            await pilot.pause()
+            assert modal.check_action('pick_date', ()) is True
+            assert modal.check_action('insert_today', ()) is True
+            assert modal.check_action('insert_next_free', ()) is True
+
+    async def test_insert_today_fills_start_input(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from datetime import date
+
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.query_one('#input-start', Input).focus()
+            await pilot.pause()
+            modal.action_insert_today()
+            assert modal.query_one('#input-start', Input).value == date.today().isoformat()
+
+    async def test_insert_today_fills_due_input_when_due_focused(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from datetime import date
+
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            modal.query_one('#input-due', Input).focus()
+            await pilot.pause()
+            modal.action_insert_today()
+            assert modal.query_one('#input-due', Input).value == date.today().isoformat()
+
+    async def test_insert_next_free_uses_busy_days(
+        self, tasks: list
+    ) -> None:
+        from datetime import date, timedelta
+
+        from textual.widgets import Input
+
+        # Monday next week, to guarantee workday
+        today = date.today()
+        while today.weekday() >= 5:
+            today += timedelta(days=1)
+        busy = {today}
+        expected = today + timedelta(days=1)
+        while expected.weekday() >= 5:
+            expected += timedelta(days=1)
+
+        class BusyClient:
+            def __init__(self) -> None:
+                self.updates: list = []
+
+            async def get_busy_days(self, principal_id: int) -> set[date]:
+                return busy
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+                return None
+
+        app = OpApp(tasks=tasks, config=_config(), client=BusyClient())
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            modal.form.assignee_id = 5
+            modal.query_one('#input-start', Input).focus()
+            modal._today_override = today  # type: ignore[attr-defined]
+            await pilot.pause()
+            await modal.action_insert_next_free()
+        assert modal.query_one('#input-start', Input).value == expected.isoformat()
+
     async def test_calendar_can_be_pushed_and_rendered(
         self, app_factory: T.Callable[..., OpApp]
     ) -> None:
