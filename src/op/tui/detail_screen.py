@@ -24,6 +24,10 @@ class DetailScreen(Screen[None]):
         Binding('e', 'edit', 'Edit', show=True),
         Binding('c', 'comment', 'Comment', show=True),
         Binding('o', 'open_browser', 'Open', show=True),
+        # Less-style navigation
+        Binding('space', 'page_down', 'Page Down', show=False),
+        Binding('greater_than_sign', 'scroll_end', 'End', show=False),
+        Binding('less_than_sign', 'scroll_home', 'Home', show=False),
     ]
 
     DEFAULT_CSS = """
@@ -188,6 +192,22 @@ class DetailScreen(Screen[None]):
 
     def action_close(self) -> None:
         self.app.pop_screen()
+
+    # --- less-style scroll controls ---
+    # These delegate to the content VerticalScroll; the default Screen-level
+    # action_scroll_* raise SkipAction because the screen itself is not scrollable.
+
+    def action_page_down(self) -> None:
+        self._content_scroll().action_page_down()
+
+    def action_scroll_end(self) -> None:
+        self._content_scroll().scroll_end(animate=False)
+
+    def action_scroll_home(self) -> None:
+        self._content_scroll().scroll_home(animate=False)
+
+    def _content_scroll(self) -> VerticalScroll:
+        return self.query_one(VerticalScroll)
 
     def action_open_browser(self) -> None:
         base_url = self.config.connection.base_url.rstrip('/')
