@@ -68,7 +68,8 @@ class DetailScreen(Screen[None]):
     }
     DetailScreen #search-bar {
         dock: bottom;
-        height: 1;
+        height: 3;
+        background: $boost;
         display: none;
     }
     DetailScreen #search-bar.visible {
@@ -76,14 +77,16 @@ class DetailScreen(Screen[None]):
     }
     DetailScreen #search-input {
         width: 1fr;
+        background: $surface;
+        color: $text;
     }
     DetailScreen #search-status {
         width: auto;
-        padding: 0 1;
+        padding: 1 1;
         color: $text-muted;
     }
     DetailScreen .search-hit-current {
-        border: round $warning;
+        border-left: thick $warning;
     }
     """
 
@@ -326,6 +329,9 @@ class DetailScreen(Screen[None]):
 
     def _run_search(self, pattern: str) -> None:
         self._clear_search_marks()
+        # Always restore the original markdown source — previous search may have
+        # wrapped matches in <mark> tags.
+        self._restore_markdown_sources()
         if not pattern:
             self._search_hits = []
             self._total_matches = 0
@@ -340,15 +346,35 @@ class DetailScreen(Screen[None]):
         total = 0
         hits: list[Markdown] = []
         for widget, text in self._searchable_blocks():
-            matches = len(regex.findall(text))
-            if matches:
-                hits.append(widget)
-                total += matches
+            matches = regex.findall(text)
+            if not matches:
+                continue
+            hits.append(widget)
+            total += len(matches)
+            # Wrap each match in a <mark> tag so the rendered markdown shows the
+            # concrete text locations (not just an outline around the whole block).
+            highlighted = regex.sub(
+                lambda m: f'<mark>{m.group(0)}</mark>', text
+            )
+            widget.update(highlighted)
         self._search_hits = hits
         self._total_matches = total
         self._current_hit = 0 if hits else -1
         self._focus_hit()
         self._update_search_status()
+
+    def _restore_markdown_sources(self) -> None:
+        """Revert any <mark>-wrapping applied by the previous search."""
+        if self.wp.description:
+            try:
+                self.query_one('#description', Markdown).update(self.wp.description)
+            except Exception:  # noqa: BLE001
+                pass
+        for widget, original in self._activity_widgets:
+            try:
+                widget.update(original)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _searchable_blocks(self) -> list[tuple[Markdown, str]]:
         blocks: list[tuple[Markdown, str]] = []
