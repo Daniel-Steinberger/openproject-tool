@@ -323,6 +323,106 @@ class TestSearch:
             assert input_.display is True
             assert input_.has_focus
 
+    async def test_search_input_is_tall_enough_to_show_text(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        """Regression: search bar was height:1 which cropped the Input content line."""
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('slash')
+            await pilot.pause()
+            input_ = app.screen.query_one('#search-input', Input)
+            # Textual Input default height is 3 rows (top border + content + bottom border)
+            assert input_.region.height >= 3
+
+    async def test_search_hit_markdown_contains_highlighted_match_span(
+        self, tasks: list
+    ) -> None:
+        """The match substring must be wrapped for visual emphasis inside the hit widget."""
+        from textual.widgets import Markdown
+
+        class ClientWithHits:
+            async def get_activities(self, wp_id):  # noqa: ANN001, ANN202
+                return [
+                    Activity(
+                        id=1,
+                        comment='Hallo foo bar',
+                        user_name='X',
+                        user_id=1,
+                    ),
+                ]
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        custom = [
+            WorkPackage(
+                id=1, subject='s', type_id=1, type_name='Task',
+                status_id=1, status_name='Neu', project_id=10, project_name='W',
+                lock_version=1, description=None,
+            ),
+            tasks[1],
+        ]
+        app = OpApp(tasks=custom, config=_config(), client=ClientWithHits())
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            screen = app.screen
+            screen._run_search('foo')
+            await pilot.pause()
+            # After the match, the hit widget's markdown source should contain the match
+            # wrapped in a visible marker — we use <mark> tags.
+            hit_widget = screen._search_hits[0]
+            assert isinstance(hit_widget, Markdown)
+            assert '<mark>foo</mark>' in hit_widget._markdown
+
+    async def test_clearing_search_restores_original_markdown(
+        self, tasks: list
+    ) -> None:
+        """When the user dismisses search, the <mark>-wrapping must be removed again."""
+        from textual.widgets import Markdown
+
+        class ClientWithHits:
+            async def get_activities(self, wp_id):  # noqa: ANN001, ANN202
+                return [
+                    Activity(id=1, comment='foo text', user_name='X', user_id=1),
+                ]
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        custom = [
+            WorkPackage(
+                id=1, subject='s', type_id=1, type_name='Task',
+                status_id=1, status_name='Neu', project_id=10, project_name='W',
+                lock_version=1, description=None,
+            ),
+            tasks[1],
+        ]
+        app = OpApp(tasks=custom, config=_config(), client=ClientWithHits())
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            for _ in range(10):
+                await pilot.pause()
+                if app.screen._activities:
+                    break
+            screen = app.screen
+            screen._run_search('foo')
+            await pilot.pause()
+            widget = screen._activity_widgets[0][0]
+            assert '<mark>' in widget._markdown
+            # Empty pattern must remove the highlighting
+            screen._run_search('')
+            await pilot.pause()
+            assert '<mark>' not in widget._markdown
+
 
 class TestActivityUserFallback:
     async def test_user_resolved_via_remote_when_title_missing(
