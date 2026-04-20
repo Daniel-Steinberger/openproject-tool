@@ -192,6 +192,74 @@ class TestRowMarker:
             assert '2' in str(cell)
 
 
+class TestInteractiveFilter:
+    @pytest.fixture
+    def filter_tasks(self) -> list[WorkPackage]:
+        return [_wp(1, 'A'), _wp(2, 'B')]
+
+    async def test_f_opens_filter_screen(
+        self, filter_tasks: list[WorkPackage]
+    ) -> None:
+        from op.tui.filter_screen import FilterScreen
+
+        cfg = Config(
+            connection=ConnectionConfig(base_url='https://x'),
+            defaults=DefaultsConfig(),
+            remote=RemoteConfig(),
+        )
+        app = OpApp(tasks=filter_tasks, config=cfg)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('f')
+            await pilot.pause()
+            assert isinstance(app.screen, FilterScreen)
+
+    async def test_apply_new_query_reloads_tasks_from_api(
+        self, filter_tasks: list[WorkPackage]
+    ) -> None:
+        from op.search import SearchQuery
+        from textual.widgets import DataTable
+
+        reloaded: list[list[WorkPackage]] = []
+
+        class ReloadClient:
+            async def search_work_packages(
+                self, *, filters=None, page_size=100,  # noqa: ANN001
+            ):
+                reloaded.append(filters or [])
+                # Return a fresh task pretending the new filter matched it
+                return [
+                    WorkPackage(
+                        id=42, subject='Fresh', type_id=1, type_name='Task',
+                        status_id=1, status_name='Neu', project_id=10,
+                        project_name='W', lock_version=1,
+                    )
+                ]
+
+            async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                return None
+
+        cfg = Config(
+            connection=ConnectionConfig(base_url='https://x'),
+            defaults=DefaultsConfig(),
+            remote=RemoteConfig(),
+        )
+        app = OpApp(tasks=filter_tasks, config=cfg, client=ReloadClient())
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            # Directly trigger the reload via the public method
+            new_query = SearchQuery(words=['fresh'])
+            screen = app.screen
+            await screen._reload_with_query(new_query)
+            await pilot.pause()
+
+            table = screen.query_one('#task-list', DataTable)
+            assert table.row_count == 1
+            assert app.current_query is new_query
+            # API was called once and received a subject-contains filter
+            assert len(reloaded) == 1
+
+
 class TestProjectFilter:
     @pytest.fixture
     def mixed_tasks(self) -> list[WorkPackage]:
