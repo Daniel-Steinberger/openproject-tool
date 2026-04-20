@@ -97,6 +97,7 @@ async def run(
                 config=config,
                 client=client,
                 config_path=effective_config_path,
+                query=query,
             )
             await app.run_async()
             log.info('TUI exited cleanly')

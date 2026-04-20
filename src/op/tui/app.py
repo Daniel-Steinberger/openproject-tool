@@ -9,6 +9,7 @@ from textual.app import App
 from op.config import Config
 from op.models import WorkPackage
 from op.queue import OperationQueue
+from op.search import SearchQuery
 from op.tui.main_screen import MainScreen
 
 
@@ -54,12 +55,14 @@ class OpApp(App[None]):
         config: Config,
         client: T.Any | None = None,
         config_path: Path | None = None,
+        query: SearchQuery | None = None,
     ) -> None:
         super().__init__()
         self._initial_tasks = tasks
         self._config = config
         self._client = client
         self.config_path: Path | None = config_path
+        self.current_query: SearchQuery = query or SearchQuery()
         self.pending_ops: OperationQueue = OperationQueue()
         # Register our command-palette provider alongside Textual's defaults.
         # Assigning at instance level works because App checks self.COMMANDS at runtime.

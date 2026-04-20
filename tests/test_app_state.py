@@ -28,6 +28,21 @@ class TestSharedQueue:
         assert app.pending_ops.count == 0
 
 
+class TestCurrentQuery:
+    def test_default_empty_query(self) -> None:
+        app = OpApp(tasks=[_wp(1)], config=_config())
+        assert app.current_query is not None
+        assert app.current_query.words == []
+        assert app.current_query.filters == {}
+
+    def test_initial_query_preserved(self) -> None:
+        from op.search import SearchQuery
+
+        q = SearchQuery(words=['foo'], filters={'status': ['open']})
+        app = OpApp(tasks=[_wp(1)], config=_config(), query=q)
+        assert app.current_query is q
+
+
 class TestSubTitle:
     async def test_selector_sub_title(self) -> None:
         app = OpApp(tasks=[_wp(1)], config=_config())

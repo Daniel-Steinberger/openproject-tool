@@ -166,10 +166,11 @@ class TestRunEndToEnd:
 
         original_init = OpApp.__init__
 
-        def _spy_init(self, *, tasks, config, client=None, config_path=None):  # noqa: ANN001, ANN202
+        def _spy_init(self, *, tasks, config, client=None, config_path=None, query=None):  # noqa: ANN001, ANN202
             captured['client'] = client
             original_init(
-                self, tasks=tasks, config=config, client=client, config_path=config_path,
+                self, tasks=tasks, config=config, client=client,
+                config_path=config_path, query=query,
             )
             raise SystemExit(0)
 
