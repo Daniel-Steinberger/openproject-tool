@@ -201,4 +201,25 @@ def _resolve_value(
     return None, value
 
 
-__all__ = ['SearchQuery', 'parse', 'build_api_filters']
+_FIELDS_FOR_EDITOR = ('status', 'type', 'priority', 'project', 'assignee', 'author')
+
+
+def query_to_field_strings(query: SearchQuery) -> dict[str, str]:
+    """Serialise a SearchQuery to the flat string form used by the FilterScreen inputs.
+
+    Inverse: the user edits the strings, we join them to tokens, and hand them
+    back to `parse()` — which is the same path the CLI uses.
+    """
+    result: dict[str, str] = {'words': ' '.join(query.words)}
+    for field in _FIELDS_FOR_EDITOR:
+        values = query.filters.get(field, [])
+        result[field] = ', '.join(values)
+    return result
+
+
+__all__ = [
+    'SearchQuery',
+    'parse',
+    'build_api_filters',
+    'query_to_field_strings',
+]
