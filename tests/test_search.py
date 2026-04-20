@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from op.config import DefaultsConfig, RemoteConfig
-from op.search import SearchQuery, build_api_filters, parse
+from op.search import SearchQuery, build_api_filters, parse, query_to_field_strings
 
 
 class TestIdLookup:
@@ -270,6 +270,51 @@ class TestBuildApiFilters:
         q = SearchQuery(filters={'bogus': ['x']})
         with pytest.raises(ValueError, match='bogus'):
             build_api_filters(q, RemoteConfig())
+
+
+class TestQueryToFieldStrings:
+    def test_empty_query_gives_empty_strings(self) -> None:
+        result = query_to_field_strings(SearchQuery())
+        assert result['words'] == ''
+        assert result['status'] == ''
+        assert result['type'] == ''
+        assert result['priority'] == ''
+        assert result['project'] == ''
+        assert result['assignee'] == ''
+
+    def test_multi_value_filter_comma_joined(self) -> None:
+        q = SearchQuery(filters={'type': ['Task', 'Bug']})
+        result = query_to_field_strings(q)
+        assert result['type'] == 'Task, Bug'
+
+    def test_words_are_space_joined(self) -> None:
+        q = SearchQuery(words=['deploy', 'bug'])
+        result = query_to_field_strings(q)
+        assert result['words'] == 'deploy bug'
+
+    def test_combined(self) -> None:
+        q = SearchQuery(
+            words=['hello'],
+            filters={'status': ['open'], 'type': ['Task', 'Bug'], 'assignee': ['Max']},
+        )
+        result = query_to_field_strings(q)
+        assert result['words'] == 'hello'
+        assert result['status'] == 'open'
+        assert result['type'] == 'Task, Bug'
+        assert result['assignee'] == 'Max'
+
+
+class TestParseFromFieldStrings:
+    """The inverse: field strings → SearchQuery via the existing parse() function."""
+
+    def test_parse_roundtrip(self) -> None:
+        # User enters words + filters in a dialog, we reconstruct tokens and parse
+        words = 'deploy bug'
+        filters = {'status': 'open', 'type': 'Task, Bug'}
+        tokens = words.split() + [f'{k}={v}' for k, v in filters.items()]
+        q = parse(tokens)
+        assert q.words == ['deploy', 'bug']
+        assert q.filters == {'status': ['open'], 'type': ['Task', 'Bug']}
 
 
 class TestFuzzyMatch:
