@@ -78,7 +78,7 @@ class TestApply:
             screen.query_one('#input-words', Input).value = 'deploy bug'
             screen.query_one('#input-status', Input).value = 'open'
             screen.query_one('#input-type', Input).value = 'Task, Bug'
-            await pilot.press('g')
+            await pilot.press('ctrl+g')
             await pilot.pause()
 
         assert len(results) == 1
@@ -99,7 +99,7 @@ class TestApply:
             await pilot.pause()
             app.push_screen(FilterScreen(query=SearchQuery()), lambda q: results.append(q))
             await pilot.pause()
-            await pilot.press('q')
+            await pilot.press('escape')
             await pilot.pause()
 
         assert results == [None]
@@ -113,7 +113,7 @@ class TestApply:
             await pilot.pause()
             app.push_screen(FilterScreen(query=SearchQuery()), lambda q: results.append(q))
             await pilot.pause()
-            await pilot.press('g')
+            await pilot.press('ctrl+g')
             await pilot.pause()
 
         assert results == [SearchQuery()]
