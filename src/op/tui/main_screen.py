@@ -56,8 +56,9 @@ class MainScreen(Screen[None]):
         Binding('i', 'invert_selection', 'Invert', show=True),
         Binding('u', 'update', 'Edit', show=True),
         Binding('g', 'review_queue', 'Apply', show=True),
+        Binding('f', 'open_filter', 'Filter', show=True),
         Binding('o', 'open_browser', 'Open', show=True),
-        Binding('p', 'toggle_project_filter', 'Filter', show=True),
+        Binding('p', 'toggle_project_filter', 'Proj-Filter', show=True),
         Binding('q', 'quit', 'Quit', show=True),
     ]
 
@@ -144,6 +145,47 @@ class MainScreen(Screen[None]):
             return
         base_url = self.config.connection.base_url.rstrip('/')
         webbrowser.open(f'{base_url}/work_packages/{task_id}')
+
+    def action_open_filter(self) -> None:
+        """Open the runtime filter editor; on apply, reload tasks from the API."""
+        from op.search import SearchQuery
+        from op.tui.filter_screen import FilterScreen
+
+        current = getattr(self.app, 'current_query', None) or SearchQuery()
+
+        def _on_dismiss(new_query):  # noqa: ANN001, ANN202
+            if new_query is None:
+                return
+            self.run_worker(self._reload_with_query(new_query), exclusive=True)
+
+        self.app.push_screen(FilterScreen(query=current), _on_dismiss)
+
+    async def _reload_with_query(self, query) -> None:  # noqa: ANN001
+        """Replace the task list via a fresh API call using the new query."""
+        from op.search import build_api_filters
+
+        if self.client is None:
+            self.notify('No API client — cannot reload', severity='warning')
+            return
+        try:
+            if query.task_id is not None:
+                wp = await self.client.get_work_package(query.task_id)
+                new_tasks = [wp] if wp is not None else []
+            else:
+                api_filters = build_api_filters(query, self.config.remote)
+                new_tasks = await self.client.search_work_packages(filters=api_filters)
+        except Exception as exc:  # noqa: BLE001
+            log.exception('Filter reload failed')
+            self.notify(f'Filter failed: {exc}', severity='error', timeout=8)
+            return
+        self.app.current_query = query
+        self.all_tasks = list(new_tasks)
+        self.tasks = self._apply_filter(self.all_tasks, self.config)
+        self._tasks_by_id = {t.id: t for t in self.tasks}
+        self.selection = Selection()
+        self._rebuild_rows()
+        self._update_state_label()
+        self.notify(f'Loaded {len(self.tasks)} task(s)', severity='information')
 
     def action_toggle_project_filter(self) -> None:
         """Toggle the project filter on/off and persist the new state."""
