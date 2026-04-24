@@ -37,12 +37,20 @@ def _config() -> Config:
 class SuccessClient:
     def __init__(self) -> None:
         self.updates: list = []
+        self.added_watchers: list = []
+        self.removed_watchers: list = []
 
     async def update_work_package(
         self, wp_id: int, *, lock_version: int, changes: dict
     ) -> WorkPackage:
         self.updates.append((wp_id, lock_version, changes))
         return _wp(wp_id)
+
+    async def add_watcher(self, wp_id: int, user_id: int) -> None:
+        self.added_watchers.append((wp_id, user_id))
+
+    async def remove_watcher(self, wp_id: int, user_id: int) -> None:
+        self.removed_watchers.append((wp_id, user_id))
 
 
 class FailingClient:
@@ -57,6 +65,12 @@ class FailingClient:
         if wp_id in self.fail_ids:
             raise RuntimeError(f'Task {wp_id} is locked')
         return _wp(wp_id)
+
+    async def add_watcher(self, wp_id: int, user_id: int) -> None:
+        pass
+
+    async def remove_watcher(self, wp_id: int, user_id: int) -> None:
+        pass
 
 
 @pytest.fixture
@@ -179,6 +193,68 @@ class TestFailureRun:
             await pilot.press('q')
             await pilot.pause()
             assert isinstance(app.screen, ReviewScreen)
+
+
+class TestWatcherApply:
+    async def test_watcher_only_op_skips_patch(self, tasks: list[WorkPackage]) -> None:
+        client = SuccessClient()
+        app = OpApp(tasks=tasks, config=_config(), client=client)
+        form = UpdateForm()
+        form.add_watcher(7)
+        app.pending_ops.add_or_merge(1, form, original_subject='Task 1')
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('g')
+            await pilot.pause()
+            await pilot.press('g')
+            for _ in range(20):
+                await pilot.pause()
+                if app.pending_ops.count == 0:
+                    break
+
+        assert len(client.updates) == 0
+        assert (1, 7) in client.added_watchers
+
+    async def test_patch_and_watcher_op_calls_both(self, tasks: list[WorkPackage]) -> None:
+        client = SuccessClient()
+        app = OpApp(tasks=tasks, config=_config(), client=client)
+        form = UpdateForm()
+        form.status_id = 2
+        form.add_watcher(7)
+        app.pending_ops.add_or_merge(1, form, original_subject='Task 1')
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('g')
+            await pilot.pause()
+            await pilot.press('g')
+            for _ in range(20):
+                await pilot.pause()
+                if app.pending_ops.count == 0:
+                    break
+
+        assert len(client.updates) == 1
+        assert (1, 7) in client.added_watchers
+
+    async def test_remove_watcher_called_during_apply(self, tasks: list[WorkPackage]) -> None:
+        client = SuccessClient()
+        app = OpApp(tasks=tasks, config=_config(), client=client)
+        form = UpdateForm()
+        form.remove_watcher(5)
+        app.pending_ops.add_or_merge(1, form, original_subject='Task 1')
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('g')
+            await pilot.pause()
+            await pilot.press('g')
+            for _ in range(20):
+                await pilot.pause()
+                if app.pending_ops.count == 0:
+                    break
+
+        assert (1, 5) in client.removed_watchers
 
 
 class TestEmptyQueue:

@@ -390,3 +390,22 @@ class TestFuzzyMatch:
         text = '\n'.join(r.message for r in caplog.records)
         assert 'nmo' in text
         assert 'Niklas Moschuring nmo' in text
+
+
+class TestWatcherFilter:
+    def test_watcher_filter_resolved(self) -> None:
+        remote = RemoteConfig(users={5: 'Alice Muster'})
+        q = parse(['watcher=alice'])
+        filters = build_api_filters(q, remote)
+        assert {'watcher_id': {'operator': '=', 'values': ['5']}} in filters
+
+    def test_unknown_watcher_raises(self) -> None:
+        remote = RemoteConfig(users={5: 'Alice'})
+        q = parse(['watcher=nobody'])
+        with pytest.raises(ValueError, match='watcher'):
+            build_api_filters(q, remote)
+
+    def test_watcher_field_in_query_to_field_strings(self) -> None:
+        q = SearchQuery(filters={'watcher': ['alice']})
+        result = query_to_field_strings(q)
+        assert result['watcher'] == 'alice'

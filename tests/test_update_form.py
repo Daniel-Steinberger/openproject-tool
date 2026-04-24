@@ -164,6 +164,100 @@ class TestProject:
         assert 'WebPortal' in summary
 
 
+class TestWatchers:
+    def test_add_watcher_tracks_id(self) -> None:
+        form = UpdateForm()
+        form.add_watcher(5)
+        assert 5 in form.add_watcher_ids
+
+    def test_remove_watcher_tracks_id(self) -> None:
+        form = UpdateForm()
+        form.remove_watcher(6)
+        assert 6 in form.remove_watcher_ids
+
+    def test_add_watcher_dedup(self) -> None:
+        form = UpdateForm()
+        form.add_watcher(5)
+        form.add_watcher(5)
+        assert form.add_watcher_ids.count(5) == 1
+
+    def test_remove_watcher_dedup(self) -> None:
+        form = UpdateForm()
+        form.remove_watcher(6)
+        form.remove_watcher(6)
+        assert form.remove_watcher_ids.count(6) == 1
+
+    def test_has_watcher_changes_true_when_adding(self) -> None:
+        form = UpdateForm()
+        form.add_watcher(5)
+        assert form.has_watcher_changes
+        assert form.has_changes
+
+    def test_has_watcher_changes_true_when_removing(self) -> None:
+        form = UpdateForm()
+        form.remove_watcher(5)
+        assert form.has_watcher_changes
+
+    def test_has_patch_changes_false_with_only_watchers(self) -> None:
+        form = UpdateForm()
+        form.add_watcher(5)
+        assert not form.has_patch_changes
+
+    def test_watcher_changes_not_in_api_changes(self) -> None:
+        form = UpdateForm()
+        form.add_watcher(5)
+        form.remove_watcher(6)
+        assert form.api_changes() == {}
+
+    def test_summary_includes_add_watcher(self) -> None:
+        form = UpdateForm()
+        form.add_watcher(5)
+        summary = form.summary(users={5: 'Alice'})
+        assert '+Alice' in summary
+
+    def test_summary_includes_remove_watcher(self) -> None:
+        form = UpdateForm()
+        form.remove_watcher(6)
+        summary = form.summary(users={6: 'Bob'})
+        assert '-Bob' in summary
+
+    def test_summary_uses_id_fallback_when_user_unknown(self) -> None:
+        form = UpdateForm()
+        form.add_watcher(99)
+        summary = form.summary()
+        assert '#99' in summary
+
+    def test_merge_from_accumulates_add_watchers(self) -> None:
+        form1 = UpdateForm()
+        form1.add_watcher(5)
+        form2 = UpdateForm()
+        form2.add_watcher(6)
+        form1.merge_from(form2)
+        assert set(form1.add_watcher_ids) == {5, 6}
+
+    def test_merge_from_deduplicates_add_watchers(self) -> None:
+        form1 = UpdateForm()
+        form1.add_watcher(5)
+        form2 = UpdateForm()
+        form2.add_watcher(5)
+        form1.merge_from(form2)
+        assert form1.add_watcher_ids.count(5) == 1
+
+    def test_merge_from_accumulates_remove_watchers(self) -> None:
+        form1 = UpdateForm()
+        form1.remove_watcher(5)
+        form2 = UpdateForm()
+        form2.remove_watcher(6)
+        form1.merge_from(form2)
+        assert set(form1.remove_watcher_ids) == {5, 6}
+
+    def test_empty_form_has_no_watcher_changes(self) -> None:
+        form = UpdateForm()
+        assert not form.has_watcher_changes
+        assert form.add_watcher_ids == []
+        assert form.remove_watcher_ids == []
+
+
 class TestCombined:
     def test_all_fields_at_once(self) -> None:
         form = UpdateForm()

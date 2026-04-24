@@ -38,6 +38,9 @@ class FakeClient:
             Activity(id=2, comment='Zweiter Kommentar', user_name='Anna'),
         ]
 
+    async def get_watchers(self, wp_id: int) -> list:
+        return []
+
     async def add_comment(self, wp_id: int, text: str) -> None:
         self.added_comments.append((wp_id, text))
 

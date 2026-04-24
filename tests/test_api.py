@@ -414,6 +414,63 @@ class TestWorkPackages:
         assert activities[1].user_name == 'Anna'
 
 
+class TestWatcherEndpoints:
+    async def test_get_watchers_returns_users(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/42/watchers').mock(
+            return_value=httpx.Response(200, json=_collection([
+                {'_type': 'User', 'id': 5, 'name': 'Alice'},
+                {'_type': 'User', 'id': 6, 'name': 'Bob'},
+            ]))
+        )
+        async with client:
+            watchers = await client.get_watchers(42)
+        assert len(watchers) == 2
+        assert watchers[0].name == 'Alice'
+        assert watchers[1].id == 6
+
+    async def test_add_watcher_posts_user_href(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        route = respx_mock.post(f'{BASE_URL}/api/v3/work_packages/42/watchers').mock(
+            return_value=httpx.Response(200, json={'id': 5, 'name': 'Alice'})
+        )
+        async with client:
+            await client.add_watcher(42, 5)
+        body = json.loads(route.calls.last.request.content)
+        assert body == {'user': {'href': '/api/v3/users/5'}}
+
+    async def test_remove_watcher_sends_delete(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        route = respx_mock.delete(f'{BASE_URL}/api/v3/work_packages/42/watchers/5').mock(
+            return_value=httpx.Response(204)
+        )
+        async with client:
+            await client.remove_watcher(42, 5)
+        assert route.called
+
+    async def test_remove_watcher_ignores_404(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.delete(f'{BASE_URL}/api/v3/work_packages/42/watchers/99').mock(
+            return_value=httpx.Response(404, json={'message': 'not found'})
+        )
+        async with client:
+            await client.remove_watcher(42, 99)  # must not raise
+
+    async def test_remove_watcher_raises_on_non_404_error(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.delete(f'{BASE_URL}/api/v3/work_packages/42/watchers/5').mock(
+            return_value=httpx.Response(403, json={'message': 'forbidden'})
+        )
+        async with client:
+            with pytest.raises(OpenProjectError):
+                await client.remove_watcher(42, 5)
+
+
 class TestClientLifecycle:
     async def test_client_is_closed_after_context(self) -> None:
         client = OpenProjectClient(base_url=BASE_URL, api_key=API_KEY)
