@@ -150,20 +150,34 @@ class ApplyingScreen(Screen[None]):
         main_screen = self._find_main_screen()
         wp = main_screen._tasks_by_id.get(op.task_id) if main_screen else None
         lock_version = wp.lock_version if wp is not None else 1
-        try:
-            fresh = await self.client.update_work_package(
-                op.task_id, lock_version=lock_version, changes=op.form.api_changes()
-            )
-        except Exception as exc:  # noqa: BLE001
-            op.error = str(exc) or exc.__class__.__name__
-            log.exception(
-                'OP#%s update failed (lock=%s): %s',
-                op.task_id, lock_version, exc,
-            )
-            return False
-        log.info('OP#%s updated', op.task_id)
-        if fresh is not None and main_screen is not None:
-            main_screen.refresh_row(fresh)
+
+        if op.form.has_patch_changes:
+            try:
+                fresh = await self.client.update_work_package(
+                    op.task_id, lock_version=lock_version, changes=op.form.api_changes()
+                )
+            except Exception as exc:  # noqa: BLE001
+                op.error = str(exc) or exc.__class__.__name__
+                log.exception(
+                    'OP#%s update failed (lock=%s): %s',
+                    op.task_id, lock_version, exc,
+                )
+                return False
+            log.info('OP#%s updated', op.task_id)
+            if fresh is not None and main_screen is not None:
+                main_screen.refresh_row(fresh)
+
+        if op.form.has_watcher_changes:
+            try:
+                for uid in op.form.add_watcher_ids:
+                    await self.client.add_watcher(op.task_id, uid)
+                for uid in op.form.remove_watcher_ids:
+                    await self.client.remove_watcher(op.task_id, uid)
+            except Exception as exc:  # noqa: BLE001
+                op.error = str(exc) or exc.__class__.__name__
+                log.exception('OP#%s watcher update failed: %s', op.task_id, exc)
+                return False
+
         return True
 
     def _log_error(self, op) -> None:  # noqa: ANN001

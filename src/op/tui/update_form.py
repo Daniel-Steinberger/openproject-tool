@@ -25,6 +25,8 @@ class UpdateForm:
         self._description: str | None = None
         self._start_date: str | None = None
         self._due_date: str | None = None
+        self._add_watcher_ids: list[int] = []
+        self._remove_watcher_ids: list[int] = []
 
     # --- link fields -----------------------------------------------------
 
@@ -121,11 +123,37 @@ class UpdateForm:
     def due_date(self, value: str | None) -> None:
         self._due_date = value or None
 
+    # --- watcher changes -------------------------------------------------
+
+    def add_watcher(self, user_id: int) -> None:
+        if user_id not in self._add_watcher_ids:
+            self._add_watcher_ids.append(user_id)
+
+    def remove_watcher(self, user_id: int) -> None:
+        if user_id not in self._remove_watcher_ids:
+            self._remove_watcher_ids.append(user_id)
+
+    @property
+    def add_watcher_ids(self) -> list[int]:
+        return list(self._add_watcher_ids)
+
+    @property
+    def remove_watcher_ids(self) -> list[int]:
+        return list(self._remove_watcher_ids)
+
+    @property
+    def has_watcher_changes(self) -> bool:
+        return bool(self._add_watcher_ids) or bool(self._remove_watcher_ids)
+
     # --- derived ---------------------------------------------------------
 
     @property
-    def has_changes(self) -> bool:
+    def has_patch_changes(self) -> bool:
         return bool(self.api_changes())
+
+    @property
+    def has_changes(self) -> bool:
+        return self.has_patch_changes or self.has_watcher_changes
 
     def merge_from(self, other: UpdateForm) -> None:
         """Fold `other` into this form — last-writer-wins per field.
@@ -160,6 +188,15 @@ class UpdateForm:
             self._start_date = other._start_date
         if other._due_date is not None:
             self._due_date = other._due_date
+
+        # watcher lists: accumulate via set-union (deduplicated)
+        merged_add = set(self._add_watcher_ids)
+        merged_add.update(other._add_watcher_ids)
+        self._add_watcher_ids = list(merged_add)
+
+        merged_remove = set(self._remove_watcher_ids)
+        merged_remove.update(other._remove_watcher_ids)
+        self._remove_watcher_ids = list(merged_remove)
 
     def api_changes(self) -> dict[str, T.Any]:
         changes: dict[str, T.Any] = {}
@@ -226,4 +263,11 @@ class UpdateForm:
             lines.append(f'Start → {self._start_date}')
         if self._due_date is not None:
             lines.append(f'Due → {self._due_date}')
+        watcher_parts: list[str] = []
+        for uid in self._add_watcher_ids:
+            watcher_parts.append(f'+{(users or {}).get(uid, f"#{uid}")}')
+        for uid in self._remove_watcher_ids:
+            watcher_parts.append(f'-{(users or {}).get(uid, f"#{uid}")}')
+        if watcher_parts:
+            lines.append(f'Watchers {" ".join(watcher_parts)}')
         return ', '.join(lines)

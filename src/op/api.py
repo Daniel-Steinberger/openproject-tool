@@ -211,6 +211,23 @@ class OpenProjectClient:
             json={'comment': {'raw': text}},
         )
 
+    async def get_watchers(self, wp_id: int) -> list[User]:
+        elements = await self._get_collection(f'/work_packages/{wp_id}/watchers')
+        return [User.from_api(e) for e in elements]
+
+    async def add_watcher(self, wp_id: int, user_id: int) -> None:
+        await self._request(
+            'POST',
+            f'/work_packages/{wp_id}/watchers',
+            json={'user': {'href': f'/api/v3/users/{user_id}'}},
+        )
+
+    async def remove_watcher(self, wp_id: int, user_id: int) -> None:
+        path = f'/work_packages/{wp_id}/watchers/{user_id}'
+        resp = await self._raw_request('DELETE', path)
+        if resp.status_code not in (204, 404):
+            self._raise_for_status(resp, 'DELETE', path)
+
     # --- internals --------------------------------------------------------
 
     @staticmethod

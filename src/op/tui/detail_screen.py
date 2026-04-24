@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import typing as T
 import webbrowser
@@ -11,7 +12,7 @@ from textual.widgets import Footer, Header, Input, Label, Markdown
 
 from op.config import Config
 from op.html_to_markdown import html_to_markdown
-from op.models import Activity, WorkPackage
+from op.models import Activity, User, WorkPackage
 from op.tui.comment_modal import CommentModal
 from op.tui.update_form import UpdateForm
 from op.tui.update_modal import UpdateModal
@@ -119,6 +120,7 @@ class DetailScreen(Screen[None]):
         self.config = config
         self.client = client
         self._activities: list[Activity] = []
+        self._watchers: list[User] = []
         # Search state
         self._activity_widgets: list[tuple[Markdown, str]] = []
         self._search_hits: list[Markdown] = []
@@ -147,11 +149,21 @@ class DetailScreen(Screen[None]):
             self.run_worker(self._load_activities(), exclusive=True)
 
     async def _load_activities(self) -> None:
+        activities_task = self.client.get_activities(self.wp.id)
         try:
-            self._activities = await self.client.get_activities(self.wp.id)
-        except Exception:  # noqa: BLE001 — TUI must stay alive even if API blips
-            self._activities = []
+            watchers_task = self.client.get_watchers(self.wp.id)
+        except AttributeError:
+            watchers_task = self._empty_list()
+
+        results = await asyncio.gather(activities_task, watchers_task, return_exceptions=True)
+        self._activities = results[0] if not isinstance(results[0], BaseException) else []
+        self._watchers = results[1] if not isinstance(results[1], BaseException) else []
         await self._render_activities()
+        self._refresh_header()
+
+    @staticmethod
+    async def _empty_list() -> list:
+        return []
 
     async def _render_activities(self) -> None:
         """Mount one Label+Markdown pair per activity so comments render as real Markdown."""
@@ -236,6 +248,9 @@ class DetailScreen(Screen[None]):
         start_due_line = self._start_due_line(pending)
         if start_due_line:
             parts.append(start_due_line)
+        watcher_line = self._watcher_line()
+        if watcher_line:
+            parts.append(watcher_line)
         return '\n'.join(parts)
 
     def _pending_form(self):  # noqa: ANN202
@@ -287,6 +302,11 @@ class DetailScreen(Screen[None]):
         if not current and not new:
             return None
         return f'Assignee: {self._diff_text(current, new)}'
+
+    def _watcher_line(self) -> str | None:
+        if not self._watchers:
+            return None
+        return 'Beobachter: ' + ', '.join(w.name for w in self._watchers)
 
     def _start_due_line(self, pending):  # noqa: ANN202
         current_start = self.wp.start_date.isoformat() if self.wp.start_date else ''

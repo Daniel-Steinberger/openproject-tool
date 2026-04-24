@@ -17,6 +17,7 @@ _FILTER_KEY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
     'project': ('project_id', ('projects',)),
     'assignee': ('assigned_to_id', ('users', 'groups')),
     'author': ('author_id', ('users',)),
+    'watcher': ('watcher_id', ('users',)),
 }
 
 
@@ -201,7 +202,7 @@ def _resolve_value(
     return None, value
 
 
-_FIELDS_FOR_EDITOR = ('status', 'type', 'priority', 'project', 'assignee', 'author')
+_FIELDS_FOR_EDITOR = ('status', 'type', 'priority', 'project', 'assignee', 'author', 'watcher')
 
 
 def query_to_field_strings(query: SearchQuery) -> dict[str, str]:

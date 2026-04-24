@@ -89,38 +89,73 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
     def compose(self):  # noqa: ANN201
         with Vertical():
             yield Label(f'Update {self._target_count} task(s)', id='update-header')
-            with VerticalScroll(), Grid():
-                yield Label('Status:')
-                yield _make_select(self._remote.statuses, id='sel-status')
-                yield Label('Type:')
-                yield _make_select(self._remote.types, id='sel-type')
-                yield Label('Priority:')
-                yield _make_select(self._remote.priorities, id='sel-priority')
-                yield Label('Project:')
-                yield _make_select(self._remote.projects, id='sel-project')
-                yield Label('Assignee:')
-                yield _make_assignee_select(self._remote.users, self._remote.groups)
-                if self._show_scalars:
-                    yield Label('Subject:')
-                    yield Input(
-                        value=self._wp.subject if self._wp else '',
-                        id='input-subject',
-                    )
-                    yield Label('Start:')
-                    yield Input(
-                        value=_iso(self._wp.start_date if self._wp else None),
-                        placeholder='YYYY-MM-DD, today, +7, mon, next',
-                        id='input-start',
-                    )
-                    yield Label('Due:')
-                    yield Input(
-                        value=_iso(self._wp.due_date if self._wp else None),
-                        placeholder='YYYY-MM-DD, today, +7, mon, next',
-                        id='input-due',
-                    )
-                    yield Label('Description:')
-                    yield TextArea(self._wp.description or '' if self._wp else '', id='ta-description')
+            with VerticalScroll():
+                with Grid():
+                    yield Label('Status:')
+                    yield _make_select(self._remote.statuses, id='sel-status')
+                    yield Label('Type:')
+                    yield _make_select(self._remote.types, id='sel-type')
+                    yield Label('Priority:')
+                    yield _make_select(self._remote.priorities, id='sel-priority')
+                    yield Label('Project:')
+                    yield _make_select(self._remote.projects, id='sel-project')
+                    yield Label('Assignee:')
+                    yield _make_assignee_select(self._remote.users, self._remote.groups)
+                    yield Label('+ Beobachter:')
+                    yield _make_select(self._remote.users, id='sel-add-watcher')
+                    yield Label('- Beobachter:')
+                    yield _make_select(self._remote.users, id='sel-remove-watcher')
+                    if self._show_scalars:
+                        yield Label('Subject:')
+                        yield Input(
+                            value=self._wp.subject if self._wp else '',
+                            id='input-subject',
+                        )
+                        yield Label('Start:')
+                        yield Input(
+                            value=_iso(self._wp.start_date if self._wp else None),
+                            placeholder='YYYY-MM-DD, today, +7, mon, next',
+                            id='input-start',
+                        )
+                        yield Label('Due:')
+                        yield Input(
+                            value=_iso(self._wp.due_date if self._wp else None),
+                            placeholder='YYYY-MM-DD, today, +7, mon, next',
+                            id='input-due',
+                        )
+                        yield Label('Description:')
+                        yield TextArea(self._wp.description or '' if self._wp else '', id='ta-description')
+                info = self._watcher_info_text()
+                if info:
+                    yield Label(info, id='lbl-watchers-info')
             yield Footer()
+
+    def on_mount(self) -> None:
+        if self._show_scalars and self._wp is not None and self._client is not None:
+            self.run_worker(self._load_current_watchers(), exclusive=False)
+
+    async def _load_current_watchers(self) -> None:
+        try:
+            watchers = await self._client.get_watchers(self._wp.id)
+        except Exception:  # noqa: BLE001
+            return
+        if not watchers:
+            return
+        options = [(w.name, w.id) for w in watchers]
+        try:
+            self.query_one('#sel-remove-watcher', Select).set_options(options)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _watcher_info_text(self) -> str:
+        parts: list[str] = []
+        for uid in self.form.add_watcher_ids:
+            name = self._remote.users.get(uid, f'#{uid}')
+            parts.append(f'+{name}')
+        for uid in self.form.remove_watcher_ids:
+            name = self._remote.users.get(uid, f'#{uid}')
+            parts.append(f'-{name}')
+        return f'Geplant: {" ".join(parts)}' if parts else ''
 
     def on_select_changed(self, event: Select.Changed) -> None:
         select_id = event.select.id or ''
@@ -133,6 +168,16 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             # Option values are tagged "u:<id>" or "g:<id>" — see _make_assignee_select.
             kind, raw_id = str(value).split(':', 1)
             self.form.set_assignee(principal_id=int(raw_id), is_group=(kind == 'g'))
+            return
+
+        if select_id == 'sel-add-watcher':
+            if value is not None:
+                self.form.add_watcher(int(value))
+            return
+
+        if select_id == 'sel-remove-watcher':
+            if value is not None:
+                self.form.remove_watcher(int(value))
             return
 
         field_map = {
