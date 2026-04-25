@@ -28,6 +28,7 @@ class UpdateForm:
         self._add_watcher_ids: list[int] = []
         self._remove_watcher_ids: list[int] = []
         self._custom_field_links: dict[int, int | None] = {}
+        self._custom_field_options: dict[int, int | None] = {}
 
     # --- link fields -----------------------------------------------------
 
@@ -152,6 +153,10 @@ class UpdateForm:
         """Set (or clear) a user-type custom field. Pass None to explicitly clear."""
         self._custom_field_links[cf_id] = user_id
 
+    def set_custom_field_option(self, cf_id: int, option_id: int | None) -> None:
+        """Set (or clear) a list-type custom field. Pass None to explicitly clear."""
+        self._custom_field_options[cf_id] = option_id
+
     # --- derived ---------------------------------------------------------
 
     @property
@@ -208,6 +213,8 @@ class UpdateForm:
         # custom field links: last-writer-wins per field
         for cf_id, user_id in other._custom_field_links.items():
             self._custom_field_links[cf_id] = user_id
+        for cf_id, option_id in other._custom_field_options.items():
+            self._custom_field_options[cf_id] = option_id
 
     def api_changes(self) -> dict[str, T.Any]:
         changes: dict[str, T.Any] = {}
@@ -229,6 +236,11 @@ class UpdateForm:
         for cf_id, user_id in self._custom_field_links.items():
             if user_id is not None:
                 links[f'customField{cf_id}'] = {'href': f'/api/v3/users/{user_id}'}
+            else:
+                links[f'customField{cf_id}'] = {'href': None}
+        for cf_id, option_id in self._custom_field_options.items():
+            if option_id is not None:
+                links[f'customField{cf_id}'] = {'href': f'/api/v3/custom_options/{option_id}'}
             else:
                 links[f'customField{cf_id}'] = {'href': None}
         if links:
@@ -254,6 +266,7 @@ class UpdateForm:
         projects: dict[int, str] | None = None,
         users: dict[int, str] | None = None,
         custom_fields: dict[int, str] | None = None,
+        custom_field_options: dict[int, dict[int, str]] | None = None,
     ) -> str:
         """Human-readable one-line summary for confirmation display."""
         lines: list[str] = []
@@ -291,4 +304,9 @@ class UpdateForm:
             cf_name = (custom_fields or {}).get(cf_id, f'CF#{cf_id}')
             user_name = (users or {}).get(user_id, f'#{user_id}') if user_id is not None else '(none)'
             lines.append(f'{cf_name} → {user_name}')
+        for cf_id, option_id in self._custom_field_options.items():
+            cf_name = (custom_fields or {}).get(cf_id, f'CF#{cf_id}')
+            cf_opts = (custom_field_options or {}).get(cf_id, {})
+            opt_name = cf_opts.get(option_id, f'#{option_id}') if option_id is not None else '(none)'
+            lines.append(f'{cf_name} → {opt_name}')
         return ', '.join(lines)

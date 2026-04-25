@@ -165,6 +165,69 @@ class TestFromApi:
         cf = CustomField.from_api(payload)
         assert cf.field_format == 'int'
 
+    def test_custom_field_allowed_options_from_embedded(self) -> None:
+        payload = {
+            'id': 7,
+            'name': 'Kundenklasse',
+            'field_format': 'list',
+            '_embedded': {'allowedValues': [
+                {'_type': 'CustomOption', 'id': 17, 'value': 'Premium'},
+                {'_type': 'CustomOption', 'id': 18, 'value': 'Standard'},
+            ]},
+            '_links': {},
+        }
+        cf = CustomField.from_api(payload)
+        assert cf.allowed_options == {17: 'Premium', 18: 'Standard'}
+        assert cf.allowed_users == {}
+
+    def test_custom_field_allowed_options_from_links(self) -> None:
+        payload = {
+            'id': 7,
+            'name': 'Kundenklasse',
+            'field_format': 'list',
+            '_embedded': {},
+            '_links': {'allowedValues': [
+                {'href': '/api/v3/custom_options/17', 'title': 'Premium'},
+                {'href': '/api/v3/custom_options/18', 'title': 'Standard'},
+            ]},
+        }
+        cf = CustomField.from_api(payload)
+        assert cf.allowed_options == {17: 'Premium', 18: 'Standard'}
+        assert cf.allowed_users == {}
+
+    def test_custom_field_user_and_option_embedded_mixed(self) -> None:
+        """Embedded values mit gemischten _type-Werten werden korrekt aufgeteilt."""
+        payload = {
+            'id': 4,
+            'name': 'PM',
+            'field_format': 'user',
+            '_embedded': {'allowedValues': [
+                {'_type': 'User', 'id': 5, 'name': 'Max'},
+                {'_type': 'Principal', 'id': 6, 'name': 'Alice'},
+            ]},
+            '_links': {},
+        }
+        cf = CustomField.from_api(payload)
+        assert cf.allowed_users == {5: 'Max', 6: 'Alice'}
+        assert cf.allowed_options == {}
+
+    def test_work_package_from_api_parses_list_cf_link(self) -> None:
+        """custom_options-Links werden korrekt in custom_field_links gespeichert."""
+        payload = {
+            '_type': 'WorkPackage',
+            'id': 1,
+            'subject': 'S',
+            'lockVersion': 1,
+            '_links': {
+                'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
+                'project': {'href': '/api/v3/projects/10', 'title': 'P'},
+                'customField7': {'href': '/api/v3/custom_options/17', 'title': 'Premium'},
+            },
+        }
+        wp = WorkPackage.from_api(payload)
+        assert wp.custom_field_links.get(7) == 17
+
     def test_work_package_from_api(self) -> None:
         payload = {
             '_type': 'WorkPackage',

@@ -87,11 +87,17 @@ class RemoteConfig(BaseModel):
     project_parents: dict[int, int] = Field(default_factory=dict)
     custom_fields: dict[int, str] = Field(default_factory=dict)
     custom_field_users: dict[int, dict[int, str]] = Field(default_factory=dict)
+    custom_field_options: dict[int, dict[int, str]] = Field(default_factory=dict)
 
     @property
     def pm_users(self) -> dict[int, str]:
-        """Allowed users for the PM custom field (customField42). Empty if not yet loaded."""
-        return self.custom_field_users.get(42, {})
+        """Allowed values for the PM custom field (customField42).
+
+        CF#42 can be user-type (returns custom_field_users) or list-type/CustomOption
+        (returns custom_field_options). Falls back between the two so callers don't
+        need to know the underlying field format.
+        """
+        return self.custom_field_users.get(42, {}) or self.custom_field_options.get(42, {})
 
 
 class FilterConfig(BaseModel):
@@ -150,6 +156,7 @@ def update_remote(
     project_parents: dict[int, int] | None = None,
     custom_fields: dict[int, str] | None = None,
     custom_field_users: dict[int, dict[int, str]] | None = None,
+    custom_field_options: dict[int, dict[int, str]] | None = None,
 ) -> None:
     """Replace the given remote subtables in-place, preserving comments and unrelated sections."""
     if not path.exists():
@@ -185,6 +192,15 @@ def update_remote(
                 inner[str(uid)] = name
             outer[str(cf_id)] = inner
         remote['custom_field_users'] = outer
+
+    if custom_field_options is not None:
+        outer = tomlkit.table()
+        for cf_id, opt_map in custom_field_options.items():
+            inner = tomlkit.table()
+            for opt_id, value in opt_map.items():
+                inner[str(opt_id)] = value
+            outer[str(cf_id)] = inner
+        remote['custom_field_options'] = outer
 
     path.write_text(tomlkit.dumps(doc))
 

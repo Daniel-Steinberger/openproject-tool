@@ -120,31 +120,47 @@ class CustomField(_ApiModel):
     name: str
     field_format: str
     allowed_users: dict[int, str] = Field(default_factory=dict)
+    allowed_options: dict[int, str] = Field(default_factory=dict)
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> CustomField:
         allowed_users: dict[int, str] = {}
-        # Prefer _embedded.allowedValues (full User objects with id+name)
+        allowed_options: dict[int, str] = {}
+        # Prefer _embedded.allowedValues — full objects with _type distinguishing CustomOption vs User
         embedded = payload.get('_embedded') or {}
         for av in embedded.get('allowedValues') or []:
-            uid = av.get('id')
-            uname = av.get('name')
-            if uid is not None and uname is not None:
-                allowed_users[int(uid)] = str(uname)
-        # Fall back to _links.allowedValues (HAL links with href+title)
-        if not allowed_users:
+            av_id = av.get('id')
+            if av_id is None:
+                continue
+            if av.get('_type') == 'CustomOption':
+                value = av.get('value')
+                if value is not None:
+                    allowed_options[int(av_id)] = str(value)
+            else:
+                uname = av.get('name')
+                if uname is not None:
+                    allowed_users[int(av_id)] = str(uname)
+        # Fall back to _links.allowedValues — HAL links; distinguish by href prefix
+        if not allowed_users and not allowed_options:
             links = payload.get('_links') or {}
             for av in links.get('allowedValues') or []:
-                if isinstance(av, dict):
-                    uid = id_from_href(av.get('href'))
-                    uname = av.get('title')
-                    if uid is not None and uname is not None:
-                        allowed_users[uid] = str(uname)
+                if not isinstance(av, dict):
+                    continue
+                href = av.get('href') or ''
+                av_id = id_from_href(href)
+                title = av.get('title')
+                if av_id is None or title is None:
+                    continue
+                if '/custom_options/' in href:
+                    allowed_options[av_id] = str(title)
+                else:
+                    allowed_users[av_id] = str(title)
         return cls(
             id=payload['id'],
             name=payload['name'],
             field_format=payload.get('fieldFormat') or payload.get('field_format', ''),
             allowed_users=allowed_users,
+            allowed_options=allowed_options,
         )
 
 

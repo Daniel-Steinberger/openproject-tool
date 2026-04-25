@@ -452,3 +452,59 @@ class TestPmFilter:
         q = SearchQuery(filters={'pm': ['AUM']})
         result = query_to_field_strings(q)
         assert result['pm'] == 'AUM'
+
+
+class TestCfNFilter:
+    """Generischer cf<N>=<Wert>-Filter für Custom Fields."""
+
+    def test_list_cf_resolves_option_by_name(self) -> None:
+        remote = RemoteConfig(custom_field_options={7: {17: 'Premium', 18: 'Standard'}})
+        q = parse(['cf7=Premium'])
+        filters = build_api_filters(q, remote)
+        assert {'customField7': {'operator': '=', 'values': ['17']}} in filters
+
+    def test_list_cf_substring_match(self) -> None:
+        remote = RemoteConfig(custom_field_options={7: {17: 'Premium', 18: 'Standard'}})
+        q = parse(['cf7=prem'])
+        filters = build_api_filters(q, remote)
+        assert {'customField7': {'operator': '=', 'values': ['17']}} in filters
+
+    def test_list_cf_ambiguous_raises(self) -> None:
+        remote = RemoteConfig(custom_field_options={7: {17: 'Premi A', 18: 'Premi B'}})
+        q = parse(['cf7=Premi'])
+        with pytest.raises(ValueError, match='Ambiguous'):
+            build_api_filters(q, remote)
+
+    def test_list_cf_unknown_value_raises(self) -> None:
+        remote = RemoteConfig(custom_field_options={7: {17: 'Premium'}})
+        q = parse(['cf7=Unbekannt'])
+        with pytest.raises(ValueError, match='cf7'):
+            build_api_filters(q, remote)
+
+    def test_list_cf_not_loaded_raises(self) -> None:
+        remote = RemoteConfig()
+        q = parse(['cf7=Premium'])
+        with pytest.raises(ValueError, match='cf7'):
+            build_api_filters(q, remote)
+
+    def test_user_cf_resolves_by_name_via_cfn(self) -> None:
+        remote = RemoteConfig(custom_field_users={42: {94: 'AUM Mustermann', 5: 'Bob'}})
+        q = parse(['cf42=AUM'])
+        filters = build_api_filters(q, remote)
+        assert {'customField42': {'operator': '=', 'values': ['94']}} in filters
+
+    def test_cf_filter_merges_users_and_options(self) -> None:
+        """Falls ein CF sowohl Users als auch Options hat (unwahrscheinlich, aber sicher behandeln)."""
+        remote = RemoteConfig(
+            custom_field_users={7: {5: 'Max'}},
+            custom_field_options={7: {17: 'Premium'}},
+        )
+        q = parse(['cf7=Premium'])
+        filters = build_api_filters(q, remote)
+        assert {'customField7': {'operator': '=', 'values': ['17']}} in filters
+
+    def test_cf_filter_unknown_key_raises_helpful_message(self) -> None:
+        remote = RemoteConfig()
+        q = parse(['xyz=foo'])
+        with pytest.raises(ValueError, match='cf<N>'):
+            build_api_filters(q, remote)

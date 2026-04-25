@@ -340,6 +340,85 @@ class TestCustomFieldUser:
         assert 'CF#4' in summary or '#99' in summary
 
 
+class TestCustomFieldOption:
+    def test_set_custom_field_option_appears_in_api_changes(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_option(7, 17)
+        assert form.api_changes() == {
+            '_links': {'customField7': {'href': '/api/v3/custom_options/17'}}
+        }
+
+    def test_clear_custom_field_option_sends_null_href(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_option(7, None)
+        assert form.api_changes() == {
+            '_links': {'customField7': {'href': None}}
+        }
+
+    def test_custom_field_option_has_changes(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_option(7, 17)
+        assert form.has_changes
+        assert form.has_patch_changes
+
+    def test_multiple_list_custom_fields(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_option(7, 17)
+        form.set_custom_field_option(9, 20)
+        links = form.api_changes()['_links']
+        assert links['customField7'] == {'href': '/api/v3/custom_options/17'}
+        assert links['customField9'] == {'href': '/api/v3/custom_options/20'}
+
+    def test_list_cf_combined_with_user_cf(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_user(42, 5)
+        form.set_custom_field_option(7, 17)
+        links = form.api_changes()['_links']
+        assert links['customField42'] == {'href': '/api/v3/users/5'}
+        assert links['customField7'] == {'href': '/api/v3/custom_options/17'}
+
+    def test_merge_from_propagates_option(self) -> None:
+        form1 = UpdateForm()
+        form2 = UpdateForm()
+        form2.set_custom_field_option(7, 17)
+        form1.merge_from(form2)
+        assert form1.api_changes()['_links']['customField7'] == {'href': '/api/v3/custom_options/17'}
+
+    def test_merge_from_last_writer_wins_for_option(self) -> None:
+        form1 = UpdateForm()
+        form1.set_custom_field_option(7, 17)
+        form2 = UpdateForm()
+        form2.set_custom_field_option(7, 18)
+        form1.merge_from(form2)
+        assert form1.api_changes()['_links']['customField7'] == {'href': '/api/v3/custom_options/18'}
+
+    def test_summary_shows_list_cf_change(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_option(7, 17)
+        summary = form.summary(
+            custom_fields={7: 'Kundenklasse'},
+            custom_field_options={7: {17: 'Premium', 18: 'Standard'}},
+        )
+        assert 'Kundenklasse' in summary
+        assert 'Premium' in summary
+
+    def test_summary_fallback_when_option_unknown(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_option(7, 99)
+        summary = form.summary()
+        assert 'CF#7' in summary or '#99' in summary
+
+    def test_summary_clear_option_shows_none(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_option(7, None)
+        summary = form.summary(
+            custom_fields={7: 'Kundenklasse'},
+            custom_field_options={7: {17: 'Premium'}},
+        )
+        assert 'Kundenklasse' in summary
+        assert '(none)' in summary
+
+
 class TestCombined:
     def test_all_fields_at_once(self) -> None:
         form = UpdateForm()

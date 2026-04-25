@@ -24,7 +24,11 @@ from op.models import (
 _API_BASE = '/api/v3'
 _DEFAULT_PAGE_SIZE = 100
 _CUSTOM_FIELD_KEY = re.compile(r'^customField(\d+)$')
+_SCHEMA_PAIR_RE = re.compile(r'/schemas/(\d+)-(\d+)$')
 _SCHEMA_PAIR_BATCH = 200  # keep URL below ~4 KB
+# CustomOption field formats whose options are not returned by the schema endpoint
+# but ARE returned by the work-package form endpoint.
+_LIST_CF_FORMATS = frozenset({'customoption', '[]customoption'})
 
 
 class OpenProjectError(Exception):
@@ -106,8 +110,12 @@ class OpenProjectClient:
         ]
         responses = await asyncio.gather(*(self._fetch_schema_batch(b) for b in batches))
         seen: dict[int, CustomField] = {}
+        # Track one representative (project_id, type_id) per CF for follow-up form calls.
+        cf_representative: dict[int, tuple[int, int]] = {}
         for elements in responses:
             for schema in elements:
+                self_href = (schema.get('_links') or {}).get('self', {}).get('href', '')
+                pair_match = _SCHEMA_PAIR_RE.search(self_href)
                 for key, value in schema.items():
                     match = _CUSTOM_FIELD_KEY.match(key)
                     if not match or not isinstance(value, dict):
@@ -122,7 +130,63 @@ class OpenProjectClient:
                         '_embedded': value.get('_embedded') or {},
                         '_links': value.get('_links') or {},
                     })
+                    if pair_match:
+                        cf_representative[field_id] = (
+                            int(pair_match.group(1)),
+                            int(pair_match.group(2)),
+                        )
+        # List-type CFs often return no inline allowedValues from the schema endpoint.
+        # Fetch them via the project form endpoint which always embeds them.
+        list_cfs = [
+            (cf_id, cf_representative[cf_id])
+            for cf_id, cf in seen.items()
+            if cf.field_format in _LIST_CF_FORMATS
+            and not cf.allowed_options
+            and cf_id in cf_representative
+        ]
+        if list_cfs:
+            await self._enrich_list_cf_options(seen, list_cfs)
         return [seen[k] for k in sorted(seen)]
+
+    async def _enrich_list_cf_options(
+        self,
+        seen: dict[int, CustomField],
+        cfs: list[tuple[int, tuple[int, int]]],
+    ) -> None:
+        """Fetch allowed options for list CFs via the work-package form endpoint."""
+        pair_to_cf_ids: dict[tuple[int, int], list[int]] = {}
+        for cf_id, pair in cfs:
+            pair_to_cf_ids.setdefault(pair, []).append(cf_id)
+        pairs = list(pair_to_cf_ids.keys())
+        results = await asyncio.gather(
+            *(self._fetch_form_schema(p, t) for p, t in pairs),
+            return_exceptions=True,
+        )
+        for (p, t), form_schema in zip(pairs, results):
+            if isinstance(form_schema, Exception):
+                continue
+            for key, value in form_schema.items():
+                m = _CUSTOM_FIELD_KEY.match(key)
+                if not m or not isinstance(value, dict):
+                    continue
+                cf_id = int(m.group(1))
+                if cf_id not in seen:
+                    continue
+                for av in (value.get('_embedded') or {}).get('allowedValues') or []:
+                    if av.get('_type') == 'CustomOption':
+                        opt_id = av.get('id')
+                        opt_value = av.get('value')
+                        if opt_id is not None and opt_value is not None:
+                            seen[cf_id].allowed_options[int(opt_id)] = str(opt_value)
+
+    async def _fetch_form_schema(self, project_id: int, type_id: int) -> dict[str, T.Any]:
+        """POST to the work-package form for one project-type pair; returns its embedded schema."""
+        data = await self._request(
+            'POST',
+            f'/projects/{project_id}/work_packages/form',
+            json={'_links': {'type': {'href': f'/api/v3/types/{type_id}'}}},
+        )
+        return data.get('_embedded', {}).get('schema', {})
 
     async def _fetch_schema_batch(self, pairs: list[str]) -> list[dict[str, T.Any]]:
         filters = [{'id': {'operator': '=', 'values': pairs}}]

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import typing as T
 from dataclasses import dataclass, field
 
 from op.config import DefaultsConfig, RemoteConfig
+
+_CF_KEY_RE = re.compile(r'^cf(\d+)$')
 
 log = logging.getLogger(__name__)
 
@@ -107,11 +110,46 @@ def build_api_filters(
         if key == 'status' and _is_meta_status(values):
             api_filters.append({'status': {'operator': values[0].lower()[0]}})
             continue
+
+        cf_match = _CF_KEY_RE.match(key)
+        if cf_match:
+            cf_id = int(cf_match.group(1))
+            merged_lookup: dict[int, str] = {}
+            merged_lookup.update(remote.custom_field_users.get(cf_id, {}))
+            merged_lookup.update(remote.custom_field_options.get(cf_id, {}))
+            if not merged_lookup:
+                raise ValueError(
+                    f'Unknown custom field: {key!r}. '
+                    f'Run op --load-remote-data to populate custom field data.'
+                )
+            is_default = key in query.default_filter_keys
+            resolved_ids: list[str] = []
+            for value in values:
+                try:
+                    entity_id, resolved_name = _resolve_value(value, merged_lookup)
+                except _AmbiguousMatch as amb:
+                    raise ValueError(
+                        f'Ambiguous {key} value: {value!r}. '
+                        f'Matches: {", ".join(amb.candidates)}'
+                    ) from None
+                if entity_id is None:
+                    if is_default:
+                        log.warning('Dropping default %s value %r — not known on remote', key, value)
+                        continue
+                    valid_values = ', '.join(sorted(merged_lookup.values())) or '(none loaded)'
+                    raise ValueError(f'Unknown {key} value: {value!r}. Valid values: {valid_values}')
+                if resolved_name != value:
+                    log.info('Resolved %s %r → %r (id=%d)', key, value, resolved_name, entity_id)
+                resolved_ids.append(str(entity_id))
+            if resolved_ids:
+                api_filters.append({f'customField{cf_id}': {'operator': '=', 'values': resolved_ids}})
+            continue
+
         if key not in _FILTER_KEY_MAP:
             valid = ', '.join(sorted(_FILTER_KEY_MAP))
-            raise ValueError(f'Unknown filter key: {key!r}. Valid keys: {valid}')
+            raise ValueError(f'Unknown filter key: {key!r}. Valid keys: {valid}, cf<N> (custom fields)')
         op_key, remote_attrs = _FILTER_KEY_MAP[key]
-        merged_lookup: dict[int, str] = {}
+        merged_lookup = {}
         for attr in remote_attrs:
             merged_lookup.update(getattr(remote, attr))
         is_default = key in query.default_filter_keys
