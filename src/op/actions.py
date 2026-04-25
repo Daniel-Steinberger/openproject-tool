@@ -42,6 +42,11 @@ async def load_remote_data(client: OpenProjectClient, config_path: Path) -> None
         users={u.id: u.name for u in users},
         groups={g.id: g.name for g in groups},
         custom_fields={cf.id: cf.name for cf in custom_fields},
+        custom_field_users={
+            cf.id: cf.allowed_users
+            for cf in custom_fields
+            if cf.field_format == 'user' and cf.allowed_users
+        },
     )
 
 

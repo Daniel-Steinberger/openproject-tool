@@ -115,16 +115,21 @@ class OpenProjectClient:
                     field_id = int(match.group(1))
                     if field_id in seen:
                         continue
-                    seen[field_id] = CustomField(
-                        id=field_id,
-                        name=value.get('name', f'Custom Field {field_id}'),
-                        field_format=str(value.get('type', '')).lower(),
-                    )
+                    seen[field_id] = CustomField.from_api({
+                        'id': field_id,
+                        'name': value.get('name', f'Custom Field {field_id}'),
+                        'field_format': str(value.get('type', '')).lower(),
+                        '_embedded': value.get('_embedded') or {},
+                    })
         return [seen[k] for k in sorted(seen)]
 
     async def _fetch_schema_batch(self, pairs: list[str]) -> list[dict[str, T.Any]]:
         filters = [{'id': {'operator': '=', 'values': pairs}}]
-        params = {'filters': json.dumps(filters), 'pageSize': str(_DEFAULT_PAGE_SIZE)}
+        params = [
+            ('filters', json.dumps(filters)),
+            ('pageSize', str(_DEFAULT_PAGE_SIZE)),
+            ('embed[]', 'allowedValues'),
+        ]
         data = await self._request('GET', '/work_packages/schemas', params=params)
         return list(data['_embedded']['elements'])
 

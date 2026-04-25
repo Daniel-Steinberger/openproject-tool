@@ -118,13 +118,22 @@ class CustomField(_ApiModel):
     id: int
     name: str
     field_format: str
+    allowed_users: dict[int, str] = Field(default_factory=dict)
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> CustomField:
+        allowed_users: dict[int, str] = {}
+        embedded = payload.get('_embedded') or {}
+        for av in embedded.get('allowedValues') or []:
+            uid = av.get('id')
+            uname = av.get('name')
+            if uid is not None and uname is not None:
+                allowed_users[int(uid)] = str(uname)
         return cls(
             id=payload['id'],
             name=payload['name'],
             field_format=payload.get('fieldFormat') or payload.get('field_format', ''),
+            allowed_users=allowed_users,
         )
 
 

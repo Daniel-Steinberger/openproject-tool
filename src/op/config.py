@@ -86,6 +86,7 @@ class RemoteConfig(BaseModel):
     projects: dict[int, str] = Field(default_factory=dict)
     project_parents: dict[int, int] = Field(default_factory=dict)
     custom_fields: dict[int, str] = Field(default_factory=dict)
+    custom_field_users: dict[int, dict[int, str]] = Field(default_factory=dict)
 
 
 class FilterConfig(BaseModel):
@@ -143,6 +144,7 @@ def update_remote(
     projects: dict[int, str] | None = None,
     project_parents: dict[int, int] | None = None,
     custom_fields: dict[int, str] | None = None,
+    custom_field_users: dict[int, dict[int, str]] | None = None,
 ) -> None:
     """Replace the given remote subtables in-place, preserving comments and unrelated sections."""
     if not path.exists():
@@ -152,7 +154,7 @@ def update_remote(
     doc = tomlkit.parse(path.read_text())
     remote = doc.setdefault('remote', tomlkit.table())
 
-    updates = {
+    flat_updates = {
         'statuses': statuses,
         'types': types,
         'priorities': priorities,
@@ -162,13 +164,22 @@ def update_remote(
         'project_parents': project_parents,
         'custom_fields': custom_fields,
     }
-    for name, values in updates.items():
+    for name, values in flat_updates.items():
         if values is None:
             continue
         table = tomlkit.table()
         for key, value in values.items():
             table[str(key)] = value
         remote[name] = table
+
+    if custom_field_users is not None:
+        outer = tomlkit.table()
+        for cf_id, uid_map in custom_field_users.items():
+            inner = tomlkit.table()
+            for uid, name in uid_map.items():
+                inner[str(uid)] = name
+            outer[str(cf_id)] = inner
+        remote['custom_field_users'] = outer
 
     path.write_text(tomlkit.dumps(doc))
 

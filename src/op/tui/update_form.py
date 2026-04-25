@@ -27,6 +27,7 @@ class UpdateForm:
         self._due_date: str | None = None
         self._add_watcher_ids: list[int] = []
         self._remove_watcher_ids: list[int] = []
+        self._custom_field_links: dict[int, int | None] = {}
 
     # --- link fields -----------------------------------------------------
 
@@ -145,6 +146,12 @@ class UpdateForm:
     def has_watcher_changes(self) -> bool:
         return bool(self._add_watcher_ids) or bool(self._remove_watcher_ids)
 
+    # --- custom field link fields ----------------------------------------
+
+    def set_custom_field_user(self, cf_id: int, user_id: int | None) -> None:
+        """Set (or clear) a user-type custom field. Pass None to explicitly clear."""
+        self._custom_field_links[cf_id] = user_id
+
     # --- derived ---------------------------------------------------------
 
     @property
@@ -198,6 +205,10 @@ class UpdateForm:
         merged_remove.update(other._remove_watcher_ids)
         self._remove_watcher_ids = list(merged_remove)
 
+        # custom field links: last-writer-wins per field
+        for cf_id, user_id in other._custom_field_links.items():
+            self._custom_field_links[cf_id] = user_id
+
     def api_changes(self) -> dict[str, T.Any]:
         changes: dict[str, T.Any] = {}
 
@@ -215,6 +226,11 @@ class UpdateForm:
             links['assignee'] = {'href': f'/api/v3/{kind}/{self._assignee_id}'}
         elif self._unassign:
             links['assignee'] = {'href': None}
+        for cf_id, user_id in self._custom_field_links.items():
+            if user_id is not None:
+                links[f'customField{cf_id}'] = {'href': f'/api/v3/users/{user_id}'}
+            else:
+                links[f'customField{cf_id}'] = {'href': None}
         if links:
             changes['_links'] = links
 
@@ -237,6 +253,7 @@ class UpdateForm:
         priorities: dict[int, str] | None = None,
         projects: dict[int, str] | None = None,
         users: dict[int, str] | None = None,
+        custom_fields: dict[int, str] | None = None,
     ) -> str:
         """Human-readable one-line summary for confirmation display."""
         lines: list[str] = []
@@ -270,4 +287,8 @@ class UpdateForm:
             watcher_parts.append(f'-{(users or {}).get(uid, f"#{uid}")}')
         if watcher_parts:
             lines.append(f'Watchers {" ".join(watcher_parts)}')
+        for cf_id, user_id in self._custom_field_links.items():
+            cf_name = (custom_fields or {}).get(cf_id, f'CF#{cf_id}')
+            user_name = (users or {}).get(user_id, f'#{user_id}') if user_id is not None else '(none)'
+            lines.append(f'{cf_name} → {user_name}')
         return ', '.join(lines)

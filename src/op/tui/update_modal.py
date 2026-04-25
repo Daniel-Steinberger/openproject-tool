@@ -105,6 +105,10 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                     yield _make_select(self._remote.users, id='sel-add-watcher')
                     yield Label('- Beobachter:')
                     yield _make_select(self._remote.users, id='sel-remove-watcher')
+                    for _cf_id, _cf_users in sorted(self._remote.custom_field_users.items()):
+                        _cf_name = self._remote.custom_fields.get(_cf_id, f'CF #{_cf_id}')
+                        yield Label(f'{_cf_name}:')
+                        yield _make_select(_cf_users, id=f'sel-cf-{_cf_id}')
                     if self._show_scalars:
                         yield Label('Subject:')
                         yield Input(
@@ -178,6 +182,11 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         if select_id == 'sel-remove-watcher':
             if value is not None:
                 self.form.remove_watcher(int(value))
+            return
+
+        if select_id.startswith('sel-cf-'):
+            cf_id = int(select_id[len('sel-cf-'):])
+            self.form.set_custom_field_user(cf_id, int(value) if value is not None else None)
             return
 
         field_map = {
