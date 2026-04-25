@@ -409,3 +409,28 @@ class TestWatcherFilter:
         q = SearchQuery(filters={'watcher': ['alice']})
         result = query_to_field_strings(q)
         assert result['watcher'] == 'alice'
+
+
+class TestPmFilter:
+    def test_pm_filter_resolves_to_custom_field_42(self) -> None:
+        remote = RemoteConfig(users={94: 'AUM Mustermann'})
+        q = parse(['pm=AUM'])
+        filters = build_api_filters(q, remote)
+        assert {'customField42': {'operator': '=', 'values': ['94']}} in filters
+
+    def test_pm_filter_substring_match(self) -> None:
+        remote = RemoteConfig(users={94: 'AUM Mustermann', 5: 'Alice'})
+        q = parse(['pm=mustermann'])
+        filters = build_api_filters(q, remote)
+        assert {'customField42': {'operator': '=', 'values': ['94']}} in filters
+
+    def test_unknown_pm_raises(self) -> None:
+        remote = RemoteConfig(users={94: 'AUM Mustermann'})
+        q = parse(['pm=nobody'])
+        with pytest.raises(ValueError, match='pm'):
+            build_api_filters(q, remote)
+
+    def test_pm_field_in_query_to_field_strings(self) -> None:
+        q = SearchQuery(filters={'pm': ['AUM']})
+        result = query_to_field_strings(q)
+        assert result['pm'] == 'AUM'
