@@ -18,6 +18,7 @@ _FIELD_IDS: list[tuple[str, str, str]] = [
     ('Project',  'input-project',  'project'),
     ('Assignee', 'input-assignee', 'assignee'),
     ('Author',   'input-author',   'author'),
+    ('PM',       'input-pm',       'pm'),
 ]
 
 
