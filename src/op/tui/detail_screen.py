@@ -248,6 +248,8 @@ class DetailScreen(Screen[None]):
         start_due_line = self._start_due_line(pending)
         if start_due_line:
             parts.append(start_due_line)
+        for cf_line in self._cf_lines(pending, users):
+            parts.append(cf_line)
         watcher_line = self._watcher_line()
         if watcher_line:
             parts.append(watcher_line)
@@ -302,6 +304,27 @@ class DetailScreen(Screen[None]):
         if not current and not new:
             return None
         return f'Assignee: {self._diff_text(current, new)}'
+
+    def _cf_lines(self, pending, users: dict[int, str]) -> list[str]:
+        """Render a line for each user-type custom field that has a value or pending change."""
+        remote = self.config.remote
+        lines = []
+        for cf_id, allowed_users in sorted(remote.custom_field_users.items()):
+            cf_name = remote.custom_fields.get(cf_id, f'CF#{cf_id}')
+            current_uid = self.wp.custom_field_links.get(cf_id)
+            current_name = allowed_users.get(current_uid, f'#{current_uid}') if current_uid else ''
+            pending_uid = (
+                pending._custom_field_links.get(cf_id)
+                if pending and cf_id in pending._custom_field_links
+                else None
+            )
+            pending_name = (
+                users.get(pending_uid, f'#{pending_uid}') if pending_uid is not None else None
+            )
+            if not current_name and pending_name is None:
+                continue
+            lines.append(f'{cf_name}: {self._diff_text(current_name, pending_name)}')
+        return lines
 
     def _watcher_line(self) -> str | None:
         if not self._watchers:

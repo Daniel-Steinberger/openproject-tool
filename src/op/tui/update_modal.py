@@ -107,8 +107,12 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                     yield _make_select(self._remote.users, id='sel-remove-watcher')
                     for _cf_id, _cf_users in sorted(self._remote.custom_field_users.items()):
                         _cf_name = self._remote.custom_fields.get(_cf_id, f'CF #{_cf_id}')
+                        _initial = (
+                            self._wp.custom_field_links.get(_cf_id)
+                            if self._wp is not None else None
+                        )
                         yield Label(f'{_cf_name}:')
-                        yield _make_select(_cf_users, id=f'sel-cf-{_cf_id}')
+                        yield _make_select(_cf_users, id=f'sel-cf-{_cf_id}', value=_initial)
                     if self._show_scalars:
                         yield Label('Subject:')
                         yield Input(
@@ -377,14 +381,12 @@ def _resolve_date_field(raw: str) -> str:
 
 
 def _make_select(
-    options: dict[int, str], *, id: str
+    options: dict[int, str], *, id: str, value: int | None = None
 ) -> Select[int]:  # noqa: A002 — `id` mirrors Textual API
-    return Select[int](
-        [(name, oid) for oid, name in sorted(options.items(), key=lambda x: x[1])],
-        prompt='— no change —',
-        id=id,
-        allow_blank=True,
-    )
+    opts = [(name, oid) for oid, name in sorted(options.items(), key=lambda x: x[1])]
+    if value is not None:
+        return Select[int](opts, prompt='— no change —', id=id, allow_blank=True, value=value)
+    return Select[int](opts, prompt='— no change —', id=id, allow_blank=True)
 
 
 def _make_assignee_select(

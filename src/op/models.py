@@ -7,6 +7,7 @@ from datetime import date
 from pydantic import BaseModel, ConfigDict, Field
 
 _ID_RE = re.compile(r'/(\d+)/?$')
+_CUSTOM_FIELD_KEY_RE = re.compile(r'^customField(\d+)$')
 
 
 def id_from_href(href: str | None) -> int | None:
@@ -157,6 +158,7 @@ class WorkPackage(_ApiModel):
     due_date: date | None = None
     lock_version: int
     custom_fields: dict[str, T.Any] = Field(default_factory=dict)
+    custom_field_links: dict[int, int | None] = Field(default_factory=dict)
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> WorkPackage:
@@ -165,6 +167,13 @@ class WorkPackage(_ApiModel):
         description = description_raw if description_raw else None
 
         custom_fields = {k: v for k, v in payload.items() if k.startswith('customField')}
+
+        custom_field_links: dict[int, int | None] = {}
+        for link_key, link_val in links.items():
+            m = _CUSTOM_FIELD_KEY_RE.match(link_key)
+            if m and isinstance(link_val, dict):
+                cf_id = int(m.group(1))
+                custom_field_links[cf_id] = id_from_href(link_val.get('href'))
 
         return cls(
             id=payload['id'],
@@ -186,6 +195,7 @@ class WorkPackage(_ApiModel):
             due_date=_parse_date(payload.get('dueDate')),
             lock_version=payload['lockVersion'],
             custom_fields=custom_fields,
+            custom_field_links=custom_field_links,
         )
 
 
