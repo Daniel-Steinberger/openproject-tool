@@ -68,7 +68,7 @@ class FilterScreen(ModalScreen[SearchQuery | None]):
                     yield Label(f'{label}:')
                     yield Input(
                         value=self._initial.get(key, ''),
-                        placeholder='comma-separated (use * for any)' if key != 'words' else 'space-separated',
+                        placeholder='komma-getrennt (* = beliebig, ! = nicht gesetzt)' if key != 'words' else 'space-separated',
                         id=input_id,
                     )
             yield Footer()

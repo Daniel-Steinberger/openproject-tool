@@ -30,6 +30,7 @@ class SearchQuery:
     task_id: int | None = None
     words: list[str] = field(default_factory=list)
     filters: dict[str, list[str]] = field(default_factory=dict)
+    empty_filters: set[str] = field(default_factory=set)
     default_filter_keys: set[str] = field(default_factory=set)
 
 
@@ -37,6 +38,7 @@ def parse(tokens: list[str], *, defaults: DefaultsConfig | None = None) -> Searc
     """Parse CLI tokens into a SearchQuery, applying default filters where no override is given."""
     explicit_filters: dict[str, list[str]] = {}
     wildcard_keys: set[str] = set()
+    empty_keys: set[str] = set()
     non_filter_tokens: list[str] = []
 
     for token in tokens:
@@ -46,6 +48,8 @@ def parse(tokens: list[str], *, defaults: DefaultsConfig | None = None) -> Searc
             value = raw_value.strip()
             if value in ('', '*'):
                 wildcard_keys.add(key)
+            elif value == '!':
+                empty_keys.add(key)
             else:
                 explicit_filters[key] = [v.strip() for v in value.split(',') if v.strip()]
         else:
@@ -58,12 +62,13 @@ def parse(tokens: list[str], *, defaults: DefaultsConfig | None = None) -> Searc
     ):
         return SearchQuery(task_id=int(non_filter_tokens[0]))
 
-    filters = _merge_with_defaults(explicit_filters, wildcard_keys, defaults)
+    filters = _merge_with_defaults(explicit_filters, wildcard_keys | empty_keys, defaults)
     default_filter_keys = set(filters) - set(explicit_filters)
     return SearchQuery(
         task_id=None,
         words=non_filter_tokens,
         filters=filters,
+        empty_filters=empty_keys,
         default_filter_keys=default_filter_keys,
     )
 
@@ -102,6 +107,21 @@ def build_api_filters(
     not block the entire search.
     """
     api_filters: list[dict[str, T.Any]] = []
+
+    for key in query.empty_filters:
+        cf_match = _CF_KEY_RE.match(key)
+        if cf_match:
+            cf_id = int(cf_match.group(1))
+            api_filters.append({f'customField{cf_id}': {'operator': '!*', 'values': []}})
+            continue
+        if key == 'pm':
+            api_filters.append({'customField42': {'operator': '!*', 'values': []}})
+            continue
+        if key not in _FILTER_KEY_MAP:
+            valid = ', '.join(sorted(_FILTER_KEY_MAP))
+            raise ValueError(f'Unknown filter key: {key!r}. Valid keys: {valid}, cf<N> (custom fields)')
+        op_key = _FILTER_KEY_MAP[key][0]
+        api_filters.append({op_key: {'operator': '!*', 'values': []}})
 
     for word in query.words:
         api_filters.append({'subject': {'operator': '~', 'values': [word]}})
@@ -243,6 +263,8 @@ def _resolve_value(
 
 _FIELDS_FOR_EDITOR = ('status', 'type', 'priority', 'project', 'assignee', 'author', 'watcher', 'pm')
 
+FILTER_KEYS: tuple[str, ...] = tuple(_FILTER_KEY_MAP)
+
 
 def query_to_field_strings(query: SearchQuery) -> dict[str, str]:
     """Serialise a SearchQuery to the flat string form used by the FilterScreen inputs.
@@ -252,12 +274,16 @@ def query_to_field_strings(query: SearchQuery) -> dict[str, str]:
     """
     result: dict[str, str] = {'words': ' '.join(query.words)}
     for field in _FIELDS_FOR_EDITOR:
-        values = query.filters.get(field, [])
-        result[field] = ', '.join(values)
+        if field in query.empty_filters:
+            result[field] = '!'
+        else:
+            values = query.filters.get(field, [])
+            result[field] = ', '.join(values)
     return result
 
 
 __all__ = [
+    'FILTER_KEYS',
     'SearchQuery',
     'parse',
     'build_api_filters',

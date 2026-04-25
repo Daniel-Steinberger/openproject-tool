@@ -13,15 +13,20 @@ from rich.text import Text
 
 from op.actions import load_remote_data
 from op.api import AuthError, OpenProjectClient, OpenProjectError
-from op.config import Config, default_config_path, get_api_key, load_config
+from op.config import Config, DefaultsConfig, default_config_path, get_api_key, load_config
 from op.logging_setup import setup_logging
 from op.models import WorkPackage
-from op.search import build_api_filters, parse
+from op.search import FILTER_KEYS, build_api_filters, parse
 from op.tui.app import OpApp
 
 
 def main() -> None:
-    args = _parse_args(sys.argv[1:])
+    try:
+        _cfg = load_config(default_config_path())
+        _defaults = _cfg.defaults
+    except Exception:
+        _defaults = None
+    args = _parse_args(sys.argv[1:], defaults=_defaults)
     try:
         exit_code = asyncio.run(run(args))
     except AuthError as exc:
@@ -33,7 +38,7 @@ def main() -> None:
     sys.exit(exit_code or 0)
 
 
-def _parse_args(argv: list[str]) -> argparse.Namespace:
+def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog='op',
         description='Fast, keyboard-driven CLI and TUI for OpenProject.',
@@ -53,9 +58,29 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         'query',
         nargs='*',
-        help='Search tokens — ID, title words, or filters like type=bug status=*.',
+        help=_build_query_help(defaults),
     )
     return parser.parse_args(argv)
+
+
+def _build_query_help(defaults: DefaultsConfig | None) -> str:
+    keys_str = ', '.join(FILTER_KEYS) + ', cf<N>'
+    parts = [
+        f'Search tokens: an ID (e.g. 1234), free-text words, or key=value filters. '
+        f'Filter keys: {keys_str}. '
+        f'Values are matched case-insensitively and as substrings (e.g. "bug" matches "Bug Feature"). '
+        f'Multiple values comma-separated (e.g. type=Bug,Task). '
+        f'Use * to override a default (e.g. status=*), ! to find unset fields (e.g. assignee=! pm=!).',
+    ]
+    if defaults:
+        active: list[str] = []
+        if defaults.status:
+            active.append(f'status={",".join(defaults.status)}')
+        if defaults.type:
+            active.append(f'type={",".join(defaults.type)}')
+        if active:
+            parts.append(f'Active defaults (use * to disable): {" ".join(active)}.')
+    return ' '.join(parts)
 
 
 async def run(
@@ -130,7 +155,7 @@ async def _initial_tasks(
     if query.task_id is not None:
         wp = await client.get_work_package(query.task_id)
         return [wp] if wp else []
-    if not query.words and not query.filters:
+    if not query.words and not query.filters and not query.empty_filters:
         return []
     api_filters = build_api_filters(query, config.remote)
     return await client.search_work_packages(filters=api_filters)

@@ -67,6 +67,63 @@ class TestFilters:
         assert q.filters == {'type': ['bug']}
 
 
+class TestEmptyFilter:
+    def test_bang_sets_empty_filter(self) -> None:
+        q = parse(['assignee=!'])
+        assert q.empty_filters == {'assignee'}
+        assert 'assignee' not in q.filters
+
+    def test_bang_combined_with_normal_filter(self) -> None:
+        q = parse(['assignee=!', 'type=bug'])
+        assert q.empty_filters == {'assignee'}
+        assert q.filters == {'type': ['bug']}
+
+    def test_bang_multiple_fields(self) -> None:
+        q = parse(['assignee=!', 'pm=!'])
+        assert q.empty_filters == {'assignee', 'pm'}
+        assert q.filters == {}
+
+    def test_bang_suppresses_default(self) -> None:
+        defaults = DefaultsConfig(status=['open'])
+        q = parse(['status=!'], defaults=defaults)
+        assert q.empty_filters == {'status'}
+        assert 'status' not in q.filters
+
+    def test_build_api_empty_standard_field(self) -> None:
+        q = SearchQuery(empty_filters={'assignee'})
+        result = build_api_filters(q, RemoteConfig())
+        assert result == [{'assigned_to_id': {'operator': '!*', 'values': []}}]
+
+    def test_build_api_empty_pm(self) -> None:
+        q = SearchQuery(empty_filters={'pm'})
+        result = build_api_filters(q, RemoteConfig())
+        assert result == [{'customField42': {'operator': '!*', 'values': []}}]
+
+    def test_build_api_empty_cf(self) -> None:
+        q = SearchQuery(empty_filters={'cf7'})
+        result = build_api_filters(q, RemoteConfig())
+        assert result == [{'customField7': {'operator': '!*', 'values': []}}]
+
+    def test_build_api_empty_unknown_key_raises(self) -> None:
+        q = SearchQuery(empty_filters={'bogus'})
+        with pytest.raises(ValueError, match='bogus'):
+            build_api_filters(q, RemoteConfig())
+
+    def test_query_to_field_strings_empty_filter(self) -> None:
+        q = SearchQuery(empty_filters={'assignee'})
+        result = query_to_field_strings(q)
+        assert result['assignee'] == '!'
+
+    def test_roundtrip_via_field_strings(self) -> None:
+        q = SearchQuery(empty_filters={'assignee', 'type'})
+        strings = query_to_field_strings(q)
+        tokens = [f'{k}={v}' for k, v in strings.items() if v and k != 'words']
+        q2 = parse(tokens)
+        assert q2.empty_filters >= {'assignee', 'type'}
+        assert 'assignee' not in q2.filters
+        assert 'type' not in q2.filters
+
+
 class TestDefaults:
     def test_defaults_applied_when_no_filters_given(self) -> None:
         defaults = DefaultsConfig(status=['open'], type=['Task', 'Bug'])
