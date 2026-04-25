@@ -120,6 +120,7 @@ class OpenProjectClient:
                         'name': value.get('name', f'Custom Field {field_id}'),
                         'field_format': str(value.get('type', '')).lower(),
                         '_embedded': value.get('_embedded') or {},
+                        '_links': value.get('_links') or {},
                     })
         return [seen[k] for k in sorted(seen)]
 

@@ -18,7 +18,7 @@ _FILTER_KEY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
     'assignee': ('assigned_to_id', ('users', 'groups')),
     'author': ('author_id', ('users',)),
     'watcher': ('watcher_id', ('users',)),
-    'pm': ('customField42', ('users',)),
+    'pm': ('customField42', ('pm_users',)),
 }
 
 

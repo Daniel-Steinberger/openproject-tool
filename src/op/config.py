@@ -88,6 +88,11 @@ class RemoteConfig(BaseModel):
     custom_fields: dict[int, str] = Field(default_factory=dict)
     custom_field_users: dict[int, dict[int, str]] = Field(default_factory=dict)
 
+    @property
+    def pm_users(self) -> dict[int, str]:
+        """Allowed users for the PM custom field (customField42). Empty if not yet loaded."""
+        return self.custom_field_users.get(42, {})
+
 
 class FilterConfig(BaseModel):
     irrelevant_projects: list[int] = Field(default_factory=list)

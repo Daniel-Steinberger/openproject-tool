@@ -124,12 +124,22 @@ class CustomField(_ApiModel):
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> CustomField:
         allowed_users: dict[int, str] = {}
+        # Prefer _embedded.allowedValues (full User objects with id+name)
         embedded = payload.get('_embedded') or {}
         for av in embedded.get('allowedValues') or []:
             uid = av.get('id')
             uname = av.get('name')
             if uid is not None and uname is not None:
                 allowed_users[int(uid)] = str(uname)
+        # Fall back to _links.allowedValues (HAL links with href+title)
+        if not allowed_users:
+            links = payload.get('_links') or {}
+            for av in links.get('allowedValues') or []:
+                if isinstance(av, dict):
+                    uid = id_from_href(av.get('href'))
+                    uname = av.get('title')
+                    if uid is not None and uname is not None:
+                        allowed_users[uid] = str(uname)
         return cls(
             id=payload['id'],
             name=payload['name'],
