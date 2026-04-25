@@ -102,7 +102,7 @@ class TestProjectSelect:
     async def test_project_select_is_present(
         self, app_factory: T.Callable[..., OpApp]
     ) -> None:
-        from textual.widgets import Select
+        from op.tui.picker_widget import PickerWidget
 
         app = app_factory()
         async with app.run_test() as pilot:
@@ -110,13 +110,14 @@ class TestProjectSelect:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            # The new project select must exist — both in single and batch edit mode
-            assert modal.query('#sel-project')
+            assert modal.query_one('#sel-project', PickerWidget) is not None
 
     async def test_project_select_available_in_batch_edit(
         self, app_factory: T.Callable[..., OpApp]
     ) -> None:
         """Batch edit (target_count > 1): user must still be able to reassign project."""
+        from op.tui.picker_widget import PickerWidget
+
         app = app_factory()
         async with app.run_test() as pilot:
             await pilot.press('space')
@@ -126,8 +127,7 @@ class TestProjectSelect:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            # Scalar inputs hidden for batch, but link fields (incl. project) present
-            assert modal.query('#sel-project')
+            assert modal.query_one('#sel-project', PickerWidget) is not None
             assert not modal.query('#input-subject')
 
 
@@ -759,7 +759,7 @@ class TestWorkloadShortcut:
 
 
 class TestCustomFieldSelect:
-    """User-type custom fields get a Select widget in the UpdateModal."""
+    """User-type custom fields get a PickerWidget in the UpdateModal."""
 
     def _config_with_cf(self) -> Config:
         remote = RemoteConfig(
@@ -778,7 +778,7 @@ class TestCustomFieldSelect:
         )
 
     async def test_custom_field_select_exists(self) -> None:
-        from textual.widgets import Select
+        from op.tui.picker_widget import PickerWidget
 
         app = OpApp(tasks=[_wp(1)], config=self._config_with_cf())
         async with app.run_test() as pilot:
@@ -786,11 +786,11 @@ class TestCustomFieldSelect:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            sel = modal.query_one('#sel-cf-4', Select)
-            assert sel is not None
+            picker = modal.query_one('#sel-cf-4', PickerWidget)
+            assert picker is not None
 
     async def test_custom_field_select_has_allowed_users(self) -> None:
-        from textual.widgets import Select
+        from op.tui.picker_widget import PickerWidget
 
         app = OpApp(tasks=[_wp(1)], config=self._config_with_cf())
         async with app.run_test() as pilot:
@@ -798,13 +798,13 @@ class TestCustomFieldSelect:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            sel = modal.query_one('#sel-cf-4', Select)
-            option_values = [opt[1] for opt in sel._options]
+            picker = modal.query_one('#sel-cf-4', PickerWidget)
+            option_values = [opt[1] for opt in picker._options]
             assert 5 in option_values
             assert 6 in option_values
 
     async def test_selecting_custom_field_user_sets_form(self) -> None:
-        from textual.widgets import Select
+        from op.tui.picker_widget import PickerWidget
 
         app = OpApp(tasks=[_wp(1)], config=self._config_with_cf())
         async with app.run_test() as pilot:
@@ -812,12 +812,14 @@ class TestCustomFieldSelect:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            sel = modal.query_one('#sel-cf-4', Select)
-            sel.value = 5
+            picker = modal.query_one('#sel-cf-4', PickerWidget)
+            picker.value = 5
             await pilot.pause()
             assert modal.form._custom_field_links.get(4) == 5
 
     async def test_no_cf_selects_when_no_user_custom_fields(self) -> None:
+        from textual.css.query import NoMatches
+
         config = _config()
         app = OpApp(tasks=[_wp(1)], config=config)
         async with app.run_test() as pilot:
@@ -825,7 +827,6 @@ class TestCustomFieldSelect:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            from textual.css.query import NoMatches
             try:
                 modal.query_one('#sel-cf-4')
                 found = True

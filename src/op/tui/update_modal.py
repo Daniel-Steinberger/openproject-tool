@@ -6,12 +6,13 @@ from datetime import date
 from textual.binding import Binding
 from textual.containers import Grid, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Input, Label, Select, TextArea
+from textual.widgets import Footer, Input, Label, TextArea
 
 from op.config import RemoteConfig
 from op.date_shortcuts import next_free_day, parse_shortcut
 from op.models import WorkPackage
 from op.tui.calendar_modal import CalendarModal
+from op.tui.picker_widget import CompactInput, PickerWidget
 from op.tui.update_form import UpdateForm
 
 _WORKLOAD_SHORTCUTS = {'next', 'nf'}
@@ -30,7 +31,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         Binding('g', 'apply', 'Apply', show=True),
         Binding('q', 'cancel', 'Cancel', show=True),
         Binding('escape', 'cancel', 'Cancel', show=False),
-        # Date-shortcut bindings — shown conditionally via check_action()
         Binding('ctrl+d', 'pick_date', 'Calendar', show=True, priority=True),
         Binding('ctrl+t', 'insert_today', 'Today', show=True, priority=True),
         Binding('ctrl+n', 'insert_next_free', 'Next free', show=True, priority=True),
@@ -56,12 +56,16 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
     }
     UpdateModal Grid {
         grid-size: 2;
-        grid-columns: 12 1fr;
+        grid-columns: 16 1fr;
         grid-rows: auto;
         height: auto;
     }
     UpdateModal Grid > Label {
-        padding-top: 1;
+        height: 1;
+        padding: 0;
+    }
+    UpdateModal Grid > .ta-label {
+        height: 5;
     }
     UpdateModal TextArea {
         height: 5;
@@ -83,7 +87,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         self._wp = wp
         self._show_scalars = target_count == 1
         self._client = client
-        # Overridable for deterministic tests (the TUI otherwise uses date.today()).
         self._today_override: date | None = None
 
     def compose(self):  # noqa: ANN201
@@ -92,19 +95,19 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             with VerticalScroll():
                 with Grid():
                     yield Label('Status:')
-                    yield _make_select(self._remote.statuses, id='sel-status')
+                    yield _make_picker(self._remote.statuses, id='sel-status')
                     yield Label('Type:')
-                    yield _make_select(self._remote.types, id='sel-type')
+                    yield _make_picker(self._remote.types, id='sel-type')
                     yield Label('Priority:')
-                    yield _make_select(self._remote.priorities, id='sel-priority')
+                    yield _make_picker(self._remote.priorities, id='sel-priority')
                     yield Label('Project:')
-                    yield _make_select(self._remote.projects, id='sel-project')
+                    yield _make_picker(self._remote.projects, id='sel-project')
                     yield Label('Assignee:')
-                    yield _make_assignee_select(self._remote.users, self._remote.groups)
+                    yield _make_assignee_picker(self._remote.users, self._remote.groups)
                     yield Label('+ Beobachter:')
-                    yield _make_select(self._remote.users, id='sel-add-watcher')
+                    yield _make_picker(self._remote.users, id='sel-add-watcher')
                     yield Label('- Beobachter:')
-                    yield _make_select(self._remote.users, id='sel-remove-watcher')
+                    yield _make_picker(self._remote.users, id='sel-remove-watcher')
                     for _cf_id, _cf_users in sorted(self._remote.custom_field_users.items()):
                         _cf_name = self._remote.custom_fields.get(_cf_id, f'CF #{_cf_id}')
                         _initial = (
@@ -112,26 +115,34 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                             if self._wp is not None else None
                         )
                         yield Label(f'{_cf_name}:')
-                        yield _make_select(_cf_users, id=f'sel-cf-{_cf_id}', value=_initial)
+                        yield _make_picker(_cf_users, id=f'sel-cf-{_cf_id}', value=_initial)
+                    for _cf_id, _cf_opts in sorted(self._remote.custom_field_options.items()):
+                        _cf_name = self._remote.custom_fields.get(_cf_id, f'CF #{_cf_id}')
+                        _initial = (
+                            self._wp.custom_field_links.get(_cf_id)
+                            if self._wp is not None else None
+                        )
+                        yield Label(f'{_cf_name}:')
+                        yield _make_picker(_cf_opts, id=f'sel-cfo-{_cf_id}', value=_initial)
                     if self._show_scalars:
                         yield Label('Subject:')
-                        yield Input(
+                        yield CompactInput(
                             value=self._wp.subject if self._wp else '',
                             id='input-subject',
                         )
                         yield Label('Start:')
-                        yield Input(
+                        yield CompactInput(
                             value=_iso(self._wp.start_date if self._wp else None),
                             placeholder='YYYY-MM-DD, today, +7, mon, next',
                             id='input-start',
                         )
                         yield Label('Due:')
-                        yield Input(
+                        yield CompactInput(
                             value=_iso(self._wp.due_date if self._wp else None),
                             placeholder='YYYY-MM-DD, today, +7, mon, next',
                             id='input-due',
                         )
-                        yield Label('Description:')
+                        yield Label('Description:', classes='ta-label')
                         yield TextArea(self._wp.description or '' if self._wp else '', id='ta-description')
                 info = self._watcher_info_text()
                 if info:
@@ -151,7 +162,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             return
         options = [(w.name, w.id) for w in watchers]
         try:
-            self.query_one('#sel-remove-watcher', Select).set_options(options)
+            self.query_one('#sel-remove-watcher', PickerWidget).set_options(options)
         except Exception:  # noqa: BLE001
             pass
 
@@ -165,31 +176,48 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             parts.append(f'-{name}')
         return f'Geplant: {" ".join(parts)}' if parts else ''
 
-    def on_select_changed(self, event: Select.Changed) -> None:
-        select_id = event.select.id or ''
-        value = None if event.value is Select.BLANK else event.value
+    def on_key(self, event) -> None:  # noqa: ANN001
+        """Pfeil hoch/runter navigiert zwischen Feldern (außer in TextArea)."""
+        if event.key == 'up':
+            event.stop()
+            self.focus_previous()
+            self.refresh_bindings()
+        elif event.key == 'down':
+            event.stop()
+            self.focus_next()
+            self.refresh_bindings()
 
-        if select_id == 'sel-assignee':
+    def on_picker_widget_changed(self, event: PickerWidget.Changed) -> None:
+        picker_id = event.widget.id or ''
+        value = event.value  # int | str | None; None = blank/no-change
+
+        if picker_id == 'sel-assignee':
             if value is None:
                 self.form.assignee_id = None
                 return
-            # Option values are tagged "u:<id>" or "g:<id>" — see _make_assignee_select.
             kind, raw_id = str(value).split(':', 1)
             self.form.set_assignee(principal_id=int(raw_id), is_group=(kind == 'g'))
             return
 
-        if select_id == 'sel-add-watcher':
+        if picker_id == 'sel-add-watcher':
             if value is not None:
                 self.form.add_watcher(int(value))
+                event.widget._reset()
             return
 
-        if select_id == 'sel-remove-watcher':
+        if picker_id == 'sel-remove-watcher':
             if value is not None:
                 self.form.remove_watcher(int(value))
+                event.widget._reset()
             return
 
-        if select_id.startswith('sel-cf-'):
-            cf_id = int(select_id[len('sel-cf-'):])
+        if picker_id.startswith('sel-cfo-'):
+            cf_id = int(picker_id[len('sel-cfo-'):])
+            self.form.set_custom_field_option(cf_id, int(value) if value is not None else None)
+            return
+
+        if picker_id.startswith('sel-cf-'):
+            cf_id = int(picker_id[len('sel-cf-'):])
             self.form.set_custom_field_user(cf_id, int(value) if value is not None else None)
             return
 
@@ -199,7 +227,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             'sel-priority': 'priority_id',
             'sel-project': 'project_id',
         }
-        attr = field_map.get(select_id)
+        attr = field_map.get(picker_id)
         if attr is not None:
             setattr(self.form, attr, value)
 
@@ -223,7 +251,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
 
         if start_changed:
             self.form.start_date = resolved_start or None
-            # Auto-copy to due-date when user didn't set it explicitly.
             if not due_changed and not resolved_due:
                 self.form.due_date = resolved_start or None
 
@@ -243,13 +270,11 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         self.dismiss(None)
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
-        """Hide date-shortcut bindings from the footer when no date input is focused."""
         if action in self._DATE_ONLY_ACTIONS and self._focused_date_input() is None:
             return False
         return True
 
     def action_insert_today(self) -> None:
-        """Ctrl+T — fill the focused date input with today."""
         target = self._focused_date_input()
         if target is None:
             return
@@ -257,7 +282,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         self._set_date_input(target, today)
 
     async def action_insert_next_free(self) -> None:
-        """Ctrl+N — fill the focused date input with the next workload-free workday."""
         target = self._focused_date_input()
         if target is None:
             return
@@ -267,7 +291,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         self._set_date_input(target, free)
 
     def _set_date_input(self, target: Input, value: date) -> None:
-        """Write `value` to `target` and, when filling Start and Due is empty, mirror to Due."""
         target.value = value.isoformat()
         mirrored = self._mirror_start_to_due_target(
             target_id=target.id or '',
@@ -283,14 +306,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
     def _mirror_start_to_due_target(
         *, target_id: str, picked_iso: str, due_current: str
     ) -> str | None:
-        """Decide whether writing `picked_iso` into `target_id` should also populate Due.
-
-        Per issue #10, changing the start date via shortcut/pick always drags the due
-        date along. The user can still edit due manually afterwards.
-        Returns the value to write into Due, or None when no mirror is needed
-        (target is not start, or start is being cleared).
-        Pure function — no widget access — so it stays easy to unit-test.
-        """
         if target_id != 'input-start':
             return None
         if not picked_iso:
@@ -298,7 +313,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         return picked_iso
 
     async def action_pick_date(self) -> None:
-        """Open a calendar popup for the currently-focused start/due input."""
         target_input = self._focused_date_input()
         if target_input is None:
             return
@@ -308,7 +322,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
 
         def _on_pick(picked: date | None) -> None:
             if picked is not None:
-                # _set_date_input handles start->due mirroring when due is empty.
                 self._set_date_input(target_input, picked)
 
         self.app.push_screen(
@@ -333,7 +346,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             return set()
 
     async def _apply_workload_shortcut_if_needed(self) -> None:
-        """Replace the `next`/`nf` start-date with a workload-aware free day."""
         if not self._show_scalars or self._client is None:
             return
         raw_start = self.query_one('#input-start', Input).value.strip().lower()
@@ -344,7 +356,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             return
         try:
             busy = await self._client.get_busy_days(principal_id)
-        except Exception:  # noqa: BLE001 — TUI must stay usable even if API blips
+        except Exception:  # noqa: BLE001
             return
         today = self._today_override or date.today()
         free = next_free_day(today, busy_days=busy)
@@ -354,11 +366,6 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             self.form.due_date = free.isoformat()
 
     def _effective_assignee_id(self) -> int | None:
-        """The assignee whose workload the next-free lookup should target.
-
-        Prefer the assignee selected in the edit dialog (user is reassigning the task);
-        fall back to the task's current assignee.
-        """
         if self.form.assignee_id is not None:
             return self.form.assignee_id
         if self._wp is not None and self._wp.assignee_id is not None:
@@ -373,31 +380,25 @@ def _iso(value) -> str:  # noqa: ANN001
 
 
 def _resolve_date_field(raw: str) -> str:
-    """Expand a date shortcut (today, +7, mon, …) to ISO. Returns '' for empty input."""
     if not raw:
         return ''
     resolved = parse_shortcut(raw)
     return resolved.isoformat() if resolved is not None else raw
 
 
-def _make_select(
-    options: dict[int, str], *, id: str, value: int | None = None
-) -> Select[int]:  # noqa: A002 — `id` mirrors Textual API
+def _make_picker(
+    options: dict[int, str], *, id: str, value: int | None = None  # noqa: A002
+) -> PickerWidget:
     opts = [(name, oid) for oid, name in sorted(options.items(), key=lambda x: x[1])]
-    if value is not None:
-        return Select[int](opts, prompt='— no change —', id=id, allow_blank=True, value=value)
-    return Select[int](opts, prompt='— no change —', id=id, allow_blank=True)
+    return PickerWidget(opts, id=id, value=value)
 
 
-def _make_assignee_select(
-    users: dict[int, str], groups: dict[int, str]
-) -> Select[str]:
-    """Users + groups in one dropdown; option value carries kind prefix u:/g:."""
-    options: list[tuple[str, str]] = [
+def _make_assignee_picker(users: dict[int, str], groups: dict[int, str]) -> PickerWidget:
+    opts: list[tuple[str, str]] = [
         (name, f'u:{uid}') for uid, name in sorted(users.items(), key=lambda x: x[1])
     ]
-    options += [
+    opts += [
         (f'[Group] {name}', f'g:{gid}')
         for gid, name in sorted(groups.items(), key=lambda x: x[1])
     ]
-    return Select[str](options, prompt='— no change —', id='sel-assignee', allow_blank=True)
+    return PickerWidget(opts, id='sel-assignee')

@@ -785,7 +785,7 @@ class TestPmCustomField:
             assert 'AUM Mustermann' not in meta
 
     async def test_pm_prefilled_in_edit_modal(self) -> None:
-        from textual.widgets import Select
+        from op.tui.picker_widget import PickerWidget
 
         wp = self._wp_with_pm()
         config = self._config_with_pm()
@@ -797,5 +797,5 @@ class TestPmCustomField:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, UpdateModal)
-            sel = modal.query_one('#sel-cf-42', Select)
-            assert sel.value == 94
+            picker = modal.query_one('#sel-cf-42', PickerWidget)
+            assert picker.value == 94
