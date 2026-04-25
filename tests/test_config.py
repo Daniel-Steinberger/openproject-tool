@@ -240,3 +240,31 @@ class TestUpdateRemote:
         cfg = load_config(path)
         assert cfg.remote.statuses == {2: 'Offen'}
         assert cfg.remote.types == {1: 'Task'}  # preserved
+
+    def test_custom_field_users_round_trips(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        load_config(path)
+        update_remote(
+            path,
+            custom_fields={4: 'Projektmanager'},
+            custom_field_users={4: {1: 'Alice', 2: 'Bob'}},
+        )
+        cfg = load_config(path)
+        assert cfg.remote.custom_fields == {4: 'Projektmanager'}
+        assert cfg.remote.custom_field_users == {4: {1: 'Alice', 2: 'Bob'}}
+
+    def test_custom_field_users_multiple_fields(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        load_config(path)
+        update_remote(
+            path,
+            custom_field_users={4: {1: 'Alice'}, 7: {2: 'Bob', 3: 'Charlie'}},
+        )
+        cfg = load_config(path)
+        assert cfg.remote.custom_field_users[4] == {1: 'Alice'}
+        assert cfg.remote.custom_field_users[7] == {2: 'Bob', 3: 'Charlie'}
+
+    def test_custom_field_users_empty_by_default(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        cfg = load_config(path)
+        assert cfg.remote.custom_field_users == {}

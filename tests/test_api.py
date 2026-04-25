@@ -215,6 +215,80 @@ class TestMetadataEndpoints:
         assert cfs == []
         assert not respx_mock.calls
 
+    async def test_get_custom_fields_extracts_allowed_users_for_user_type(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        """User-type custom fields expose allowed_users from embedded allowedValues."""
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    'total': 1,
+                    'count': 1,
+                    '_embedded': {
+                        'elements': [
+                            {
+                                '_type': 'Schema',
+                                'customField4': {
+                                    'name': 'Projektmanager',
+                                    'type': 'User',
+                                    '_embedded': {
+                                        'allowedValues': [
+                                            {'_type': 'User', 'id': 1, 'name': 'Alice'},
+                                            {'_type': 'User', 'id': 2, 'name': 'Bob'},
+                                        ]
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                },
+            )
+        )
+        async with client:
+            cfs = await client.get_custom_fields(project_ids=[10], type_ids=[1])
+        assert len(cfs) == 1
+        cf = cfs[0]
+        assert cf.id == 4
+        assert cf.field_format == 'user'
+        assert cf.allowed_users == {1: 'Alice', 2: 'Bob'}
+
+    async def test_get_custom_fields_sends_embed_param(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        """Schema requests include embed[]=allowedValues so user choices are inline."""
+        route = respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
+            return_value=httpx.Response(
+                200,
+                json={'total': 0, 'count': 0, '_embedded': {'elements': []}},
+            )
+        )
+        async with client:
+            await client.get_custom_fields(project_ids=[10], type_ids=[1])
+        assert route.calls.last.request.url.params.get_list('embed[]') == ['allowedValues']
+
+    async def test_get_custom_fields_non_user_type_has_empty_allowed_users(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        """Non-user custom fields still parse fine, with an empty allowed_users dict."""
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    'total': 1,
+                    'count': 1,
+                    '_embedded': {
+                        'elements': [
+                            {'customField3': {'name': 'Story Points', 'type': 'Integer'}}
+                        ]
+                    },
+                },
+            )
+        )
+        async with client:
+            cfs = await client.get_custom_fields(project_ids=[10], type_ids=[1])
+        assert cfs[0].allowed_users == {}
+
 
 def _work_package(**overrides: T.Any) -> dict[str, T.Any]:
     base = {

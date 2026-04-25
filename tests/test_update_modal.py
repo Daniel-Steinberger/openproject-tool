@@ -756,3 +756,79 @@ class TestWorkloadShortcut:
         while expected.weekday() >= 5:
             expected += timedelta(days=1)
         # We can't assert on client.updates (no client); just ensure no crash.
+
+
+class TestCustomFieldSelect:
+    """User-type custom fields get a Select widget in the UpdateModal."""
+
+    def _config_with_cf(self) -> Config:
+        remote = RemoteConfig(
+            statuses={1: 'Neu'},
+            types={1: 'Task'},
+            priorities={8: 'Normal'},
+            users={5: 'Max', 6: 'Anna'},
+            projects={10: 'Web'},
+            custom_fields={4: 'Projektmanager'},
+            custom_field_users={4: {5: 'Max', 6: 'Anna'}},
+        )
+        return Config(
+            connection=ConnectionConfig(base_url='https://op.example.com'),
+            defaults=DefaultsConfig(),
+            remote=remote,
+        )
+
+    async def test_custom_field_select_exists(self) -> None:
+        from textual.widgets import Select
+
+        app = OpApp(tasks=[_wp(1)], config=self._config_with_cf())
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            sel = modal.query_one('#sel-cf-4', Select)
+            assert sel is not None
+
+    async def test_custom_field_select_has_allowed_users(self) -> None:
+        from textual.widgets import Select
+
+        app = OpApp(tasks=[_wp(1)], config=self._config_with_cf())
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            sel = modal.query_one('#sel-cf-4', Select)
+            option_values = [opt[1] for opt in sel._options]
+            assert 5 in option_values
+            assert 6 in option_values
+
+    async def test_selecting_custom_field_user_sets_form(self) -> None:
+        from textual.widgets import Select
+
+        app = OpApp(tasks=[_wp(1)], config=self._config_with_cf())
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            sel = modal.query_one('#sel-cf-4', Select)
+            sel.value = 5
+            await pilot.pause()
+            assert modal.form._custom_field_links.get(4) == 5
+
+    async def test_no_cf_selects_when_no_user_custom_fields(self) -> None:
+        config = _config()
+        app = OpApp(tasks=[_wp(1)], config=config)
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            from textual.css.query import NoMatches
+            try:
+                modal.query_one('#sel-cf-4')
+                found = True
+            except NoMatches:
+                found = False
+            assert not found

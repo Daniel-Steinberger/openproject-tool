@@ -258,6 +258,88 @@ class TestWatchers:
         assert form.remove_watcher_ids == []
 
 
+class TestCustomFieldUser:
+    def test_set_custom_field_user_appears_in_api_changes(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_user(4, 1)
+        assert form.api_changes() == {
+            '_links': {'customField4': {'href': '/api/v3/users/1'}}
+        }
+
+    def test_clear_custom_field_user_sends_null_href(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_user(4, None)
+        assert form.api_changes() == {
+            '_links': {'customField4': {'href': None}}
+        }
+
+    def test_custom_field_user_has_changes(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_user(4, 1)
+        assert form.has_changes
+        assert form.has_patch_changes
+
+    def test_no_custom_field_changes_by_default(self) -> None:
+        form = UpdateForm()
+        assert form.api_changes() == {}
+
+    def test_multiple_custom_fields(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_user(4, 1)
+        form.set_custom_field_user(7, 2)
+        links = form.api_changes()['_links']
+        assert links['customField4'] == {'href': '/api/v3/users/1'}
+        assert links['customField7'] == {'href': '/api/v3/users/2'}
+
+    def test_custom_field_combined_with_status(self) -> None:
+        form = UpdateForm()
+        form.status_id = 3
+        form.set_custom_field_user(4, 5)
+        links = form.api_changes()['_links']
+        assert 'status' in links
+        assert 'customField4' in links
+
+    def test_merge_from_propagates_custom_field(self) -> None:
+        form1 = UpdateForm()
+        form2 = UpdateForm()
+        form2.set_custom_field_user(4, 2)
+        form1.merge_from(form2)
+        assert form1.api_changes()['_links']['customField4'] == {'href': '/api/v3/users/2'}
+
+    def test_merge_from_last_writer_wins_per_field(self) -> None:
+        form1 = UpdateForm()
+        form1.set_custom_field_user(4, 1)
+        form2 = UpdateForm()
+        form2.set_custom_field_user(4, 2)
+        form1.merge_from(form2)
+        assert form1.api_changes()['_links']['customField4'] == {'href': '/api/v3/users/2'}
+
+    def test_merge_from_keeps_untouched_custom_field(self) -> None:
+        form1 = UpdateForm()
+        form1.set_custom_field_user(4, 1)
+        form2 = UpdateForm()
+        form2.status_id = 3
+        form1.merge_from(form2)
+        links = form1.api_changes()['_links']
+        assert links['customField4'] == {'href': '/api/v3/users/1'}
+
+    def test_summary_shows_custom_field_change(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_user(4, 1)
+        summary = form.summary(
+            custom_fields={4: 'Projektmanager'},
+            users={1: 'Alice'},
+        )
+        assert 'Projektmanager' in summary
+        assert 'Alice' in summary
+
+    def test_summary_fallback_when_names_unknown(self) -> None:
+        form = UpdateForm()
+        form.set_custom_field_user(4, 99)
+        summary = form.summary()
+        assert 'CF#4' in summary or '#99' in summary
+
+
 class TestCombined:
     def test_all_fields_at_once(self) -> None:
         form = UpdateForm()
