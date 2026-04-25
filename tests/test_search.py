@@ -412,21 +412,39 @@ class TestWatcherFilter:
 
 
 class TestPmFilter:
-    def test_pm_filter_resolves_to_custom_field_42(self) -> None:
-        remote = RemoteConfig(users={94: 'AUM Mustermann'})
+    def test_pm_filter_resolves_from_pm_users(self) -> None:
+        """pm= looks up only in custom_field_users[42], not all users."""
+        remote = RemoteConfig(custom_field_users={42: {94: 'AUM Mustermann', 5: 'Bob'}})
         q = parse(['pm=AUM'])
         filters = build_api_filters(q, remote)
         assert {'customField42': {'operator': '=', 'values': ['94']}} in filters
 
     def test_pm_filter_substring_match(self) -> None:
-        remote = RemoteConfig(users={94: 'AUM Mustermann', 5: 'Alice'})
+        remote = RemoteConfig(custom_field_users={42: {94: 'AUM Mustermann', 5: 'Alice'}})
         q = parse(['pm=mustermann'])
         filters = build_api_filters(q, remote)
         assert {'customField42': {'operator': '=', 'values': ['94']}} in filters
 
+    def test_pm_filter_does_not_accept_non_pm_users(self) -> None:
+        """Users not in custom_field_users[42] must not be accepted — they cause API 400."""
+        remote = RemoteConfig(
+            users={99: 'Fremder Nutzer'},
+            custom_field_users={42: {94: 'AUM Mustermann'}},
+        )
+        q = parse(['pm=Fremder'])
+        with pytest.raises(ValueError, match='pm'):
+            build_api_filters(q, remote)
+
     def test_unknown_pm_raises(self) -> None:
-        remote = RemoteConfig(users={94: 'AUM Mustermann'})
+        remote = RemoteConfig(custom_field_users={42: {94: 'AUM Mustermann'}})
         q = parse(['pm=nobody'])
+        with pytest.raises(ValueError, match='pm'):
+            build_api_filters(q, remote)
+
+    def test_pm_raises_when_not_loaded(self) -> None:
+        """Empty pm_users (--load-remote-data not run) → clear error."""
+        remote = RemoteConfig()
+        q = parse(['pm=AUM'])
         with pytest.raises(ValueError, match='pm'):
             build_api_filters(q, remote)
 

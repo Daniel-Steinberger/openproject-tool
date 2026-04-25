@@ -289,6 +289,39 @@ class TestMetadataEndpoints:
             cfs = await client.get_custom_fields(project_ids=[10], type_ids=[1])
         assert cfs[0].allowed_users == {}
 
+    async def test_get_custom_fields_extracts_allowed_users_from_links_format(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        """OpenProject sometimes returns allowedValues in _links (HAL links with href+title)."""
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages/schemas').mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    'total': 1,
+                    'count': 1,
+                    '_embedded': {
+                        'elements': [
+                            {
+                                'customField42': {
+                                    'name': 'PM',
+                                    'type': 'User',
+                                    '_links': {
+                                        'allowedValues': [
+                                            {'href': '/api/v3/users/94', 'title': 'AUM Mustermann'},
+                                            {'href': '/api/v3/users/5', 'title': 'Bob Müller'},
+                                        ]
+                                    },
+                                }
+                            }
+                        ]
+                    },
+                },
+            )
+        )
+        async with client:
+            cfs = await client.get_custom_fields(project_ids=[10], type_ids=[1])
+        assert cfs[0].allowed_users == {94: 'AUM Mustermann', 5: 'Bob Müller'}
+
 
 def _work_package(**overrides: T.Any) -> dict[str, T.Any]:
     base = {
