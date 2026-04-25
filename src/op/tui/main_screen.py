@@ -45,6 +45,7 @@ def _count_changed_fields(form: UpdateForm) -> int:
     if '_links' in changes:
         total += len(changes['_links'])
     total += sum(1 for k in changes if k != '_links')
+    total += len(form.add_watcher_ids) + len(form.remove_watcher_ids)
     return total
 
 
