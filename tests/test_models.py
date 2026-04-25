@@ -227,6 +227,47 @@ class TestFromApi:
         assert wp.priority_id is None
         assert wp.description is None
 
+    def test_work_package_from_api_parses_user_custom_field_link(self) -> None:
+        payload = {
+            '_type': 'WorkPackage',
+            'id': 1,
+            'subject': 'S',
+            'lockVersion': 1,
+            '_links': {
+                'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
+                'project': {'href': '/api/v3/projects/10', 'title': 'P'},
+                'customField42': {'href': '/api/v3/users/94', 'title': 'AUM Mustermann'},
+            },
+        }
+        wp = WorkPackage.from_api(payload)
+        assert wp.custom_field_links.get(42) == 94
+
+    def test_work_package_custom_field_links_empty_when_absent(self) -> None:
+        payload = {
+            '_type': 'WorkPackage', 'id': 1, 'subject': 'S', 'lockVersion': 1,
+            '_links': {
+                'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
+                'project': {'href': '/api/v3/projects/10', 'title': 'P'},
+            },
+        }
+        wp = WorkPackage.from_api(payload)
+        assert wp.custom_field_links == {}
+
+    def test_work_package_custom_field_null_href_stored_as_none(self) -> None:
+        payload = {
+            '_type': 'WorkPackage', 'id': 1, 'subject': 'S', 'lockVersion': 1,
+            '_links': {
+                'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
+                'project': {'href': '/api/v3/projects/10', 'title': 'P'},
+                'customField42': {'href': None},
+            },
+        }
+        wp = WorkPackage.from_api(payload)
+        assert wp.custom_field_links.get(42) is None
+
 
 class TestActivity:
     def test_from_api_with_comment(self) -> None:

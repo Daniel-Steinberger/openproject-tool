@@ -727,3 +727,75 @@ class TestComment:
             await pilot.press('ctrl+s')
             await pilot.pause()
         assert client.added_comments == [(1, 'Hallo vom Test')]
+
+
+class TestPmCustomField:
+    """PM (customField42) appears in detail meta and is pre-filled in the edit dialog."""
+
+    def _wp_with_pm(self) -> WorkPackage:
+        return WorkPackage(
+            id=1,
+            subject='Task mit PM',
+            type_id=1,
+            type_name='Task',
+            status_id=1,
+            status_name='Neu',
+            project_id=10,
+            project_name='Web',
+            lock_version=1,
+            custom_field_links={42: 94},
+        )
+
+    def _config_with_pm(self) -> Config:
+        return Config(
+            connection=ConnectionConfig(base_url='https://op.example.com'),
+            defaults=DefaultsConfig(),
+            remote=RemoteConfig(
+                statuses={1: 'Neu'},
+                types={1: 'Task'},
+                users={94: 'AUM Mustermann'},
+                custom_fields={42: 'PM'},
+                custom_field_users={42: {94: 'AUM Mustermann'}},
+            ),
+        )
+
+    async def test_pm_shown_in_meta_label(self) -> None:
+        wp = self._wp_with_pm()
+        config = self._config_with_pm()
+        app = OpApp(tasks=[wp], config=config)
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            detail = app.screen
+            assert isinstance(detail, DetailScreen)
+            meta = detail._meta_text()
+            assert 'PM' in meta
+            assert 'AUM Mustermann' in meta
+
+    async def test_pm_not_shown_when_empty(self) -> None:
+        wp = _wp(1, 'S')  # no custom_field_links
+        config = self._config_with_pm()
+        app = OpApp(tasks=[wp], config=config)
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            detail = app.screen
+            assert isinstance(detail, DetailScreen)
+            meta = detail._meta_text()
+            assert 'AUM Mustermann' not in meta
+
+    async def test_pm_prefilled_in_edit_modal(self) -> None:
+        from textual.widgets import Select
+
+        wp = self._wp_with_pm()
+        config = self._config_with_pm()
+        app = OpApp(tasks=[wp], config=config)
+        async with app.run_test() as pilot:
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('e')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            sel = modal.query_one('#sel-cf-42', Select)
+            assert sel.value == 94
