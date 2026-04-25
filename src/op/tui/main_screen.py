@@ -54,7 +54,9 @@ class MainScreen(Screen[None]):
 
     BINDINGS = [
         Binding('space', 'toggle_selected', 'Toggle', show=True),
-        Binding('i', 'invert_selection', 'Invert', show=True),
+        Binding('v', 'invert_selection', 'Invert', show=True),
+        Binding('i', 'ignore_task', 'Ignore', show=True),
+        Binding('i', 'unignore_task', 'Unignore', show=True),
         Binding('u', 'update', 'Edit', show=True),
         Binding('g', 'review_queue', 'Apply', show=True),
         Binding('f', 'open_filter', 'Filter', show=True),
@@ -80,11 +82,15 @@ class MainScreen(Screen[None]):
 
     @staticmethod
     def _apply_filter(tasks, config):  # noqa: ANN001, ANN205
-        """Return tasks visible under the current project-filter configuration."""
-        if not config.filter.project_filter_active:
-            return list(tasks)
-        irrelevant = set(config.filter.irrelevant_projects)
-        return [t for t in tasks if t.project_id not in irrelevant]
+        """Return tasks visible under current project-filter and ignore-filter config."""
+        result = list(tasks)
+        if config.filter.project_filter_active:
+            irrelevant = set(config.filter.irrelevant_projects)
+            result = [t for t in result if t.project_id not in irrelevant]
+        if config.filter.ignore_filter_active and config.filter.ignored_tasks:
+            ignored = set(config.filter.ignored_tasks)
+            result = [t for t in result if t.id not in ignored]
+        return result
 
     def compose(self):  # noqa: ANN201
         yield Header()
@@ -96,6 +102,9 @@ class MainScreen(Screen[None]):
             'MainScreen.on_mount client=%s tasks=%d',
             type(self.client).__name__ if self.client is not None else 'None',
             len(self.tasks),
+        )
+        getattr(self.app, 'task_subjects', {}).update(
+            {t.id: t.subject for t in self.all_tasks}
         )
         table = self.query_one('#task-list', DataTable)
         table.add_column('', key=_COL_SEL, width=3)
@@ -119,9 +128,17 @@ class MainScreen(Screen[None]):
 
     def on_screen_resume(self) -> None:
         """Re-populate queue markers + state label when returning from a sub-screen."""
-        for task in self.tasks:
-            self._refresh_queue_cell(task.id)
+        new_tasks = self._apply_filter(self.all_tasks, self.config)
+        if {t.id for t in new_tasks} != {t.id for t in self.tasks}:
+            self.tasks = new_tasks
+            self._tasks_by_id = {t.id: t for t in self.tasks}
+            self.selection = Selection()
+            self._rebuild_rows()
+        else:
+            for task in self.tasks:
+                self._refresh_queue_cell(task.id)
         self._update_state_label()
+        self.refresh_bindings()
 
     # --- actions ---------------------------------------------------------
 
@@ -136,6 +153,45 @@ class MainScreen(Screen[None]):
         self.selection.invert(all_ids=[t.id for t in self.tasks])
         for task in self.tasks:
             self._refresh_mark(task.id)
+
+    def action_ignore_task(self) -> None:
+        task_id = self._current_task_id()
+        if task_id is None:
+            return
+        ignored = list(self.config.filter.ignored_tasks)
+        if task_id not in ignored:
+            ignored.append(task_id)
+            self.config.filter.ignored_tasks = ignored
+            self._persist_filter()
+        if self.config.filter.ignore_filter_active:
+            self.tasks = self._apply_filter(self.all_tasks, self.config)
+            self._tasks_by_id = {t.id: t for t in self.tasks}
+            self.selection = Selection()
+            self._rebuild_rows()
+        self.refresh_bindings()
+        self._update_state_label()
+
+    def action_unignore_task(self) -> None:
+        task_id = self._current_task_id()
+        if task_id is None:
+            return
+        ignored = list(self.config.filter.ignored_tasks)
+        if task_id in ignored:
+            ignored.remove(task_id)
+            self.config.filter.ignored_tasks = ignored
+            self._persist_filter()
+        self.refresh_bindings()
+        self._update_state_label()
+
+    def check_action(self, action: str, parameters: tuple) -> bool | None:  # type: ignore[override]
+        if action in ('ignore_task', 'unignore_task'):
+            task_id = self._current_task_id()
+            is_ignored = task_id is not None and task_id in set(self.config.filter.ignored_tasks)
+            return not is_ignored if action == 'ignore_task' else is_ignored
+        return True
+
+    def on_data_table_row_highlighted(self, _: DataTable.RowHighlighted) -> None:
+        self.refresh_bindings()
 
     def action_quit(self) -> None:
         self.app.exit()
@@ -181,6 +237,9 @@ class MainScreen(Screen[None]):
             return
         self.app.current_query = query
         self.all_tasks = list(new_tasks)
+        getattr(self.app, 'task_subjects', {}).update(
+            {t.id: t.subject for t in self.all_tasks}
+        )
         self.tasks = self._apply_filter(self.all_tasks, self.config)
         self._tasks_by_id = {t.id: t for t in self.tasks}
         self.selection = Selection()
@@ -290,6 +349,20 @@ class MainScreen(Screen[None]):
         from op.tui.app import AppState
 
         self.app.set_state(AppState.SELECTOR)
+
+    def _persist_filter(self) -> None:
+        from op.config import update_filter
+
+        path = getattr(self.app, 'config_path', None)
+        if path is None:
+            return
+        try:
+            update_filter(
+                path,
+                ignored_tasks=self.config.filter.ignored_tasks,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception('Failed to persist ignored tasks')
 
     def _refresh_queue_cell(self, task_id: int) -> None:
         pending = self._queue().get(task_id)

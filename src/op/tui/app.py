@@ -58,17 +58,21 @@ class OpApp(App[None]):
         query: SearchQuery | None = None,
     ) -> None:
         super().__init__()
+        from op.tui.keybindings import apply_to_screens
+        apply_to_screens(config)
         self._initial_tasks = tasks
         self._config = config
         self._client = client
         self.config_path: Path | None = config_path
         self.current_query: SearchQuery = query or SearchQuery()
         self.pending_ops: OperationQueue = OperationQueue()
-        # Register our command-palette provider alongside Textual's defaults.
+        self.task_subjects: dict[int, str] = {}
+        # Register our command-palette providers alongside Textual's defaults.
         # Assigning at instance level works because App checks self.COMMANDS at runtime.
+        from op.tui.ignore_list_screen import IgnoreListProvider
         from op.tui.project_filter_screen import ProjectFilterProvider
 
-        self.COMMANDS = App.COMMANDS | {ProjectFilterProvider}
+        self.COMMANDS = App.COMMANDS | {ProjectFilterProvider, IgnoreListProvider}
 
     def on_mount(self) -> None:
         self.push_screen(
@@ -85,5 +89,11 @@ class OpApp(App[None]):
         if count:
             parts.append(f'({count} pending)')
         if state is AppState.SELECTOR and self._config.filter.project_filter_active:
-            parts.append('[filter on]')
+            parts.append('[proj-filter on]')
+        if (
+            state is AppState.SELECTOR
+            and self._config.filter.ignore_filter_active
+            and self._config.filter.ignored_tasks
+        ):
+            parts.append(f'[{len(self._config.filter.ignored_tasks)} ignored]')
         self.sub_title = ' '.join(parts)

@@ -7,9 +7,11 @@ import pytest
 from op.config import (
     Config,
     ConnectionConfig,
+    KeybindingsConfig,
     default_config_path,
     get_api_key,
     load_config,
+    normalize_key,
     update_remote,
 )
 
@@ -268,3 +270,146 @@ class TestUpdateRemote:
         path = tmp_path / 'config.toml'
         cfg = load_config(path)
         assert cfg.remote.custom_field_users == {}
+
+    def test_custom_field_options_round_trips(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        load_config(path)
+        update_remote(
+            path,
+            custom_fields={7: 'Kundenklasse'},
+            custom_field_options={7: {17: 'Premium', 18: 'Standard'}},
+        )
+        cfg = load_config(path)
+        assert cfg.remote.custom_fields == {7: 'Kundenklasse'}
+        assert cfg.remote.custom_field_options == {7: {17: 'Premium', 18: 'Standard'}}
+
+    def test_custom_field_options_multiple_fields(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        load_config(path)
+        update_remote(
+            path,
+            custom_field_options={7: {17: 'Premium'}, 9: {20: 'A', 21: 'B'}},
+        )
+        cfg = load_config(path)
+        assert cfg.remote.custom_field_options[7] == {17: 'Premium'}
+        assert cfg.remote.custom_field_options[9] == {20: 'A', 21: 'B'}
+
+    def test_custom_field_options_empty_by_default(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        cfg = load_config(path)
+        assert cfg.remote.custom_field_options == {}
+
+
+class TestNormalizeKey:
+    def test_caret_expands_to_ctrl(self) -> None:
+        assert normalize_key('^g') == 'ctrl+g'
+        assert normalize_key('^s') == 'ctrl+s'
+        assert normalize_key('^n') == 'ctrl+n'
+
+    def test_plain_keys_unchanged(self) -> None:
+        assert normalize_key('q') == 'q'
+        assert normalize_key('space') == 'space'
+        assert normalize_key('ctrl+g') == 'ctrl+g'
+        assert normalize_key('slash') == 'slash'
+
+    def test_single_caret_unchanged(self) -> None:
+        assert normalize_key('^') == '^'
+
+
+class TestKeybindingsConfig:
+    def test_defaults_match_screen_bindings(self) -> None:
+        kb = KeybindingsConfig()
+        assert kb.main.toggle == 'space'
+        assert kb.main.quit == 'q'
+        assert kb.detail.search == 'slash'
+        assert kb.update_modal.pick_date == 'ctrl+d'
+        assert kb.filter.apply == 'ctrl+g'
+        assert kb.comment.submit == 'ctrl+s'
+
+    def test_caret_notation_in_config(self) -> None:
+        kb = KeybindingsConfig.model_validate({'filter': {'apply': '^g'}})
+        assert kb.filter.apply == 'ctrl+g'
+
+    def test_missing_sections_use_defaults(self) -> None:
+        kb = KeybindingsConfig.model_validate({'main': {'quit': 'x'}})
+        assert kb.main.quit == 'x'
+        assert kb.main.toggle == 'space'  # default
+        assert kb.detail.close == 'q'    # entire section defaults
+
+
+class TestKeybindingsMigration:
+    def test_keybindings_section_added_to_existing_config(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        load_config(path)
+        content = path.read_text()
+        assert '[keybindings.main]' in content
+        assert 'base_url = "x"' in content  # connection preserved
+
+    def test_all_subsections_added_to_new_keybindings(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        load_config(path)
+        content = path.read_text()
+        for section in ('main', 'detail', 'update_modal', 'filter', 'project_filter',
+                        'review', 'comment', 'calendar', 'applying'):
+            assert f'[keybindings.{section}]' in content, f'missing [keybindings.{section}]'
+
+    def test_all_keys_present_with_defaults(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        cfg = load_config(path)
+        assert cfg.keybindings.main.quit == 'q'
+        assert cfg.keybindings.main.toggle == 'space'
+        assert cfg.keybindings.detail.search == 'slash'
+        assert cfg.keybindings.update_modal.pick_date == 'ctrl+d'
+        assert cfg.keybindings.filter.apply == 'ctrl+g'
+        assert cfg.keybindings.comment.submit == 'ctrl+s'
+
+    def test_inline_comments_present(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        load_config(path)
+        content = path.read_text()
+        assert 'mark/unmark task' in content
+        assert 'open edit dialog' in content
+        assert 'search forward' in content
+
+    def test_existing_section_gets_missing_keys_added(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text(
+            '[connection]\nbase_url = "x"\n\n'
+            '[keybindings.main]\n'
+            'quit = "x"\n'
+        )
+        cfg = load_config(path)
+        assert cfg.keybindings.main.quit == 'x'   # custom key preserved
+        assert cfg.keybindings.main.toggle == 'space'  # missing key filled in
+        # Missing keys appear in file
+        content = path.read_text()
+        assert 'toggle' in content
+        assert 'edit' in content
+
+    def test_all_subsections_added_even_when_one_pre_exists(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text(
+            '[connection]\nbase_url = "x"\n\n'
+            '[keybindings.main]\nquit = "q"\n'
+        )
+        load_config(path)
+        content = path.read_text()
+        assert '[keybindings.detail]' in content
+        assert '[keybindings.review]' in content
+
+    def test_default_template_has_keybindings_section(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        load_config(path)
+        assert '[keybindings.main]' in path.read_text()
+
+    def test_keybindings_idempotent(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        load_config(path)
+        content_after_first = path.read_text()
+        load_config(path)
+        assert path.read_text() == content_after_first  # second run changes nothing

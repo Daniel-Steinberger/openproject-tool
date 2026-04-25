@@ -98,7 +98,7 @@ class TestSelection:
     ) -> None:
         app = app_factory()
         async with app.run_test() as pilot:
-            await pilot.press('i')
+            await pilot.press('v')
             await pilot.pause()
             screen: MainScreen = app.screen  # type: ignore[assignment]
             assert screen.selection.count == 3
@@ -109,7 +109,7 @@ class TestSelection:
         app = app_factory()
         async with app.run_test() as pilot:
             await pilot.press('space')  # select 1
-            await pilot.press('i')       # invert → {2, 3}
+            await pilot.press('v')       # invert → {2, 3}
             await pilot.pause()
             screen: MainScreen = app.screen  # type: ignore[assignment]
             assert not screen.selection.contains(1)

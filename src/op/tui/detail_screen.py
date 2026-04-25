@@ -306,7 +306,7 @@ class DetailScreen(Screen[None]):
         return f'Assignee: {self._diff_text(current, new)}'
 
     def _cf_lines(self, pending, users: dict[int, str]) -> list[str]:
-        """Render a line for each user-type custom field that has a value or pending change."""
+        """Render a line for each custom field (user-type or list-type) that has a value or pending change."""
         remote = self.config.remote
         lines = []
         for cf_id, allowed_users in sorted(remote.custom_field_users.items()):
@@ -320,6 +320,21 @@ class DetailScreen(Screen[None]):
             )
             pending_name = (
                 users.get(pending_uid, f'#{pending_uid}') if pending_uid is not None else None
+            )
+            if not current_name and pending_name is None:
+                continue
+            lines.append(f'{cf_name}: {self._diff_text(current_name, pending_name)}')
+        for cf_id, allowed_options in sorted(remote.custom_field_options.items()):
+            cf_name = remote.custom_fields.get(cf_id, f'CF#{cf_id}')
+            current_opt_id = self.wp.custom_field_links.get(cf_id)
+            current_name = allowed_options.get(current_opt_id, f'#{current_opt_id}') if current_opt_id else ''
+            pending_opt_id = (
+                pending._custom_field_options.get(cf_id)
+                if pending and cf_id in pending._custom_field_options
+                else None
+            )
+            pending_name = (
+                allowed_options.get(pending_opt_id, f'#{pending_opt_id}') if pending_opt_id is not None else None
             )
             if not current_name and pending_name is None:
                 continue
