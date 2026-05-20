@@ -149,6 +149,9 @@ class ListPickerScreen(ModalScreen[object]):
         height: auto;
         max-height: 20;
     }
+    ListPickerScreen CompactInput {
+        margin-bottom: 1;
+    }
     """
 
     def __init__(
@@ -160,31 +163,85 @@ class ListPickerScreen(ModalScreen[object]):
         super().__init__()
         self._items: list[tuple[str, object]] = [('— no change —', _BLANK)] + list(options)
         self._current = current
+        self._filtered: list[tuple[str, object]] = list(self._items)
 
     def compose(self) -> ComposeResult:
         with Vertical():
+            yield CompactInput(placeholder='Filter…', id='picker-filter')
             yield ListView(id='picker-list')
             yield Footer()
 
     def on_mount(self) -> None:
+        self._rebuild_list(initial=True)
+        self.query_one('#picker-filter', CompactInput).focus()
+
+    def _rebuild_list(self, *, initial: bool = False) -> None:
         lv = self.query_one(ListView)
-        for label, _ in self._items:
+        lv.clear()
+        for label, _ in self._filtered:
             lv.append(ListItem(Label(label)))
         current_idx = 0
-        if self._current is not None:
-            for i, (_, v) in enumerate(self._items):
+        if initial and self._current is not None:
+            for i, (_, v) in enumerate(self._filtered):
                 if v == self._current:
                     current_idx = i
                     break
-        lv.index = current_idx
+        if self._filtered:
+            lv.index = current_idx
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != 'picker-filter':
+            return
+        needle = event.value.strip().lower()
+        if not needle:
+            self._filtered = list(self._items)
+        else:
+            self._filtered = [
+                (label, val)
+                for label, val in self._items
+                if val is _BLANK or needle in label.lower()
+            ]
+        self._rebuild_list()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != 'picker-filter':
+            return
+        lv = self.query_one(ListView)
+        idx = lv.index if lv.index is not None else 0
+        if not self._filtered:
+            return
+        idx = max(0, min(idx, len(self._filtered) - 1))
+        _, val = self._filtered[idx]
+        self.dismiss(val)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ('down', 'up', 'pageup', 'pagedown', 'home', 'end'):
+            lv = self.query_one(ListView)
+            if not self._filtered:
+                return
+            event.stop()
+            cur = lv.index if lv.index is not None else 0
+            if event.key == 'down':
+                cur = min(cur + 1, len(self._filtered) - 1)
+            elif event.key == 'up':
+                cur = max(cur - 1, 0)
+            elif event.key == 'pagedown':
+                cur = min(cur + 10, len(self._filtered) - 1)
+            elif event.key == 'pageup':
+                cur = max(cur - 10, 0)
+            elif event.key == 'home':
+                cur = 0
+            elif event.key == 'end':
+                cur = len(self._filtered) - 1
+            lv.index = cur
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:  # noqa: ARG002
         lv = self.query_one(ListView)
         idx = lv.index
-        if idx is None:
+        if idx is None or not self._filtered:
             self.dismiss(None)
             return
-        _, val = self._items[idx]
+        _, val = self._filtered[idx]
         self.dismiss(val)
 
     def action_cancel(self) -> None:
