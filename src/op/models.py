@@ -182,6 +182,7 @@ class WorkPackage(_ApiModel):
     author_name: str | None = None
     start_date: date | None = None
     due_date: date | None = None
+    parent_id: int | None = None
     lock_version: int
     custom_fields: dict[str, T.Any] = Field(default_factory=dict)
     custom_field_links: dict[int, int | None] = Field(default_factory=dict)
@@ -219,6 +220,7 @@ class WorkPackage(_ApiModel):
             author_name=_link_title(links, 'author'),
             start_date=_parse_date(payload.get('startDate')),
             due_date=_parse_date(payload.get('dueDate')),
+            parent_id=_link_id(links, 'parent'),
             lock_version=payload['lockVersion'],
             custom_fields=custom_fields,
             custom_field_links=custom_field_links,

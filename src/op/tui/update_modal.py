@@ -124,23 +124,29 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                         )
                         yield Label(f'{_cf_name}:')
                         yield _make_picker(_cf_opts, id=f'sel-cfo-{_cf_id}', value=_initial)
+                    yield Label('Start:')
+                    yield CompactInput(
+                        value=_iso(self._wp.start_date if self._wp else None),
+                        placeholder='YYYY-MM-DD, today, +7, mon, next',
+                        id='input-start',
+                    )
+                    yield Label('Due:')
+                    yield CompactInput(
+                        value=_iso(self._wp.due_date if self._wp else None),
+                        placeholder='YYYY-MM-DD, today, +7, mon, next',
+                        id='input-due',
+                    )
+                    yield Label('Parent:')
+                    yield CompactInput(
+                        value=str(self._wp.parent_id) if self._wp and self._wp.parent_id else '',
+                        placeholder='ID (z.B. 1234), "-" entfernt Parent',
+                        id='input-parent',
+                    )
                     if self._show_scalars:
                         yield Label('Subject:')
                         yield CompactInput(
                             value=self._wp.subject if self._wp else '',
                             id='input-subject',
-                        )
-                        yield Label('Start:')
-                        yield CompactInput(
-                            value=_iso(self._wp.start_date if self._wp else None),
-                            placeholder='YYYY-MM-DD, today, +7, mon, next',
-                            id='input-start',
-                        )
-                        yield Label('Due:')
-                        yield CompactInput(
-                            value=_iso(self._wp.due_date if self._wp else None),
-                            placeholder='YYYY-MM-DD, today, +7, mon, next',
-                            id='input-due',
                         )
                         yield Label('Description:', classes='ta-label')
                         yield TextArea(self._wp.description or '' if self._wp else '', id='ta-description')
@@ -232,14 +238,8 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             setattr(self.form, attr, value)
 
     def _sync_scalar_inputs_to_form(self) -> None:
-        if not self._show_scalars or self._wp is None:
-            return
-        new_subject = self.query_one('#input-subject', Input).value
-        if new_subject != self._wp.subject:
-            self.form.subject = new_subject
-
-        original_start = _iso(self._wp.start_date)
-        original_due = _iso(self._wp.due_date)
+        original_start = _iso(self._wp.start_date) if self._wp else ''
+        original_due = _iso(self._wp.due_date) if self._wp else ''
         new_start_raw = self.query_one('#input-start', Input).value.strip()
         new_due_raw = self.query_one('#input-due', Input).value.strip()
 
@@ -257,9 +257,30 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         if due_changed:
             self.form.due_date = resolved_due or None
 
+        self._sync_parent_input()
+
+        if not self._show_scalars or self._wp is None:
+            return
+        new_subject = self.query_one('#input-subject', Input).value
+        if new_subject != self._wp.subject:
+            self.form.subject = new_subject
+
         new_desc = self.query_one('#ta-description', TextArea).text
         if new_desc != (self._wp.description or ''):
             self.form.description = new_desc
+
+    def _sync_parent_input(self) -> None:
+        raw = self.query_one('#input-parent', Input).value.strip().lstrip('#')
+        original = str(self._wp.parent_id) if self._wp and self._wp.parent_id else ''
+        if raw == original:
+            return
+        if raw in ('', '-', 'none'):
+            self.form.clear_parent = True
+            return
+        try:
+            self.form.parent_id = int(raw)
+        except ValueError:
+            pass
 
     async def action_apply(self) -> None:
         self._sync_scalar_inputs_to_form()
@@ -295,9 +316,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         mirrored = self._mirror_start_to_due_target(
             target_id=target.id or '',
             picked_iso=value.isoformat(),
-            due_current=self.query_one('#input-due', Input).value
-            if self._show_scalars
-            else '',
+            due_current=self.query_one('#input-due', Input).value,
         )
         if mirrored is not None:
             self.query_one('#input-due', Input).value = mirrored
@@ -346,7 +365,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             return set()
 
     async def _apply_workload_shortcut_if_needed(self) -> None:
-        if not self._show_scalars or self._client is None:
+        if self._client is None:
             return
         raw_start = self.query_one('#input-start', Input).value.strip().lower()
         if raw_start not in _WORKLOAD_SHORTCUTS:

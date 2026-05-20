@@ -29,6 +29,8 @@ class UpdateForm:
         self._remove_watcher_ids: list[int] = []
         self._custom_field_links: dict[int, int | None] = {}
         self._custom_field_options: dict[int, int | None] = {}
+        self._parent_id: int | None = None
+        self._clear_parent: bool = False
 
     # --- link fields -----------------------------------------------------
 
@@ -149,6 +151,30 @@ class UpdateForm:
 
     # --- custom field link fields ----------------------------------------
 
+    # --- parent ----------------------------------------------------------
+
+    @property
+    def parent_id(self) -> int | None:
+        return self._parent_id
+
+    @parent_id.setter
+    def parent_id(self, value: int | None) -> None:
+        self._parent_id = value
+        if value is not None:
+            self._clear_parent = False
+
+    @property
+    def clear_parent(self) -> bool:
+        return self._clear_parent
+
+    @clear_parent.setter
+    def clear_parent(self, value: bool) -> None:
+        self._clear_parent = value
+        if value:
+            self._parent_id = None
+
+    # --- custom field link fields ----------------------------------------
+
     def set_custom_field_user(self, cf_id: int, user_id: int | None) -> None:
         """Set (or clear) a user-type custom field. Pass None to explicitly clear."""
         self._custom_field_links[cf_id] = user_id
@@ -192,6 +218,13 @@ class UpdateForm:
             self._unassign = True
             self._assignee_id = None
 
+        if other._parent_id is not None:
+            self._parent_id = other._parent_id
+            self._clear_parent = False
+        elif other._clear_parent:
+            self._clear_parent = True
+            self._parent_id = None
+
         if other._subject is not None:
             self._subject = other._subject
         if other._description is not None:
@@ -233,6 +266,10 @@ class UpdateForm:
             links['assignee'] = {'href': f'/api/v3/{kind}/{self._assignee_id}'}
         elif self._unassign:
             links['assignee'] = {'href': None}
+        if self._parent_id is not None:
+            links['parent'] = {'href': f'/api/v3/work_packages/{self._parent_id}'}
+        elif self._clear_parent:
+            links['parent'] = {'href': None}
         for cf_id, user_id in self._custom_field_links.items():
             if user_id is not None:
                 links[f'customField{cf_id}'] = {'href': f'/api/v3/users/{user_id}'}
@@ -287,6 +324,10 @@ class UpdateForm:
             lines.append(f'Assignee → {name}')
         elif self._unassign:
             lines.append('Assignee → (none)')
+        if self._parent_id is not None:
+            lines.append(f'Parent → #{self._parent_id}')
+        elif self._clear_parent:
+            lines.append('Parent → (none)')
         if self._subject is not None:
             lines.append(f'Subject → {self._subject!r}')
         if self._start_date is not None:
