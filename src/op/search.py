@@ -22,6 +22,7 @@ _FILTER_KEY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
     'author': ('author_id', ('users',)),
     'watcher': ('watcher_id', ('users',)),
     'pm': ('customField42', ('pm_users',)),
+    'parent': ('parent', ()),
 }
 
 
@@ -169,6 +170,16 @@ def build_api_filters(
             valid = ', '.join(sorted(_FILTER_KEY_MAP))
             raise ValueError(f'Unknown filter key: {key!r}. Valid keys: {valid}, cf<N> (custom fields)')
         op_key, remote_attrs = _FILTER_KEY_MAP[key]
+        if key == 'parent':
+            ids: list[str] = []
+            for value in values:
+                v = value.lstrip('#').strip()
+                if not v.isdigit():
+                    raise ValueError(f'Parent filter requires numeric work-package IDs, got {value!r}')
+                ids.append(v)
+            if ids:
+                api_filters.append({op_key: {'operator': '=', 'values': ids}})
+            continue
         merged_lookup = {}
         for attr in remote_attrs:
             merged_lookup.update(getattr(remote, attr))
@@ -261,7 +272,7 @@ def _resolve_value(
     return None, value
 
 
-_FIELDS_FOR_EDITOR = ('status', 'type', 'priority', 'project', 'assignee', 'author', 'watcher', 'pm')
+_FIELDS_FOR_EDITOR = ('status', 'type', 'priority', 'project', 'assignee', 'author', 'watcher', 'pm', 'parent')
 
 FILTER_KEYS: tuple[str, ...] = tuple(_FILTER_KEY_MAP)
 
