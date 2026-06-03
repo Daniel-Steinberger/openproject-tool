@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import logging
 import re
 import typing as T
@@ -101,31 +102,52 @@ def _defaults_as_dict(defaults: DefaultsConfig) -> dict[str, list[str]]:
 def build_api_filters(
     query: SearchQuery, remote: RemoteConfig
 ) -> list[dict[str, T.Any]]:
-    """Translate a SearchQuery into the OpenProject filter-JSON array.
+    """Translate a SearchQuery into a single OpenProject filter-JSON array.
+
+    Kept for callers that don't need OR-search. When a word token contains an
+    OR-alternation (``sapv|pallinet``) only the first alternative is honoured —
+    use `build_api_filter_variants` to expand the full OR.
 
     Values from user-supplied filters that cannot be resolved raise `ValueError`.
     Values from default filters are dropped with a warning — a stale default should
     not block the entire search.
     """
-    api_filters: list[dict[str, T.Any]] = []
+    return build_api_filter_variants(query, remote)[0]
+
+
+def build_api_filter_variants(
+    query: SearchQuery, remote: RemoteConfig
+) -> list[list[dict[str, T.Any]]]:
+    """Translate a SearchQuery into one or more filter-JSON arrays.
+
+    OpenProject combines all filters with AND only, so an OR across subject
+    substrings cannot be expressed in a single request. Instead we fan out: each
+    word token may contain ``|``-separated alternatives, and we emit one filter
+    array per combination (cartesian product across word tokens). The caller runs
+    each array and unions the results — yielding ``(A or B) and (C or D)`` semantics.
+
+    Without any OR-alternation this returns exactly one array, identical to the
+    legacy single-query behaviour.
+    """
+    pre: list[dict[str, T.Any]] = []
+    post: list[dict[str, T.Any]] = []
 
     for key in query.empty_filters:
         cf_match = _CF_KEY_RE.match(key)
         if cf_match:
             cf_id = int(cf_match.group(1))
-            api_filters.append({f'customField{cf_id}': {'operator': '!*', 'values': []}})
+            pre.append({f'customField{cf_id}': {'operator': '!*', 'values': []}})
             continue
         if key == 'pm':
-            api_filters.append({'customField42': {'operator': '!*', 'values': []}})
+            pre.append({'customField42': {'operator': '!*', 'values': []}})
             continue
         if key not in _FILTER_KEY_MAP:
             valid = ', '.join(sorted(_FILTER_KEY_MAP))
             raise ValueError(f'Unknown filter key: {key!r}. Valid keys: {valid}, cf<N> (custom fields)')
         op_key = _FILTER_KEY_MAP[key][0]
-        api_filters.append({op_key: {'operator': '!*', 'values': []}})
+        pre.append({op_key: {'operator': '!*', 'values': []}})
 
-    for word in query.words:
-        api_filters.append({'subject': {'operator': '~', 'values': [word]}})
+    api_filters = post
 
     for key, values in query.filters.items():
         if key == 'status' and _is_meta_status(values):
@@ -221,7 +243,23 @@ def build_api_filters(
         if resolved_ids:
             api_filters.append({op_key: {'operator': '=', 'values': resolved_ids}})
 
-    return api_filters
+    # Each word token expands to its |-separated alternatives; empty parts dropped.
+    word_groups = [
+        [alt for alt in word.split('|') if alt]
+        for word in query.words
+    ]
+    word_groups = [group for group in word_groups if group]
+
+    if not word_groups:
+        return [pre + post]
+
+    variants: list[list[dict[str, T.Any]]] = []
+    for combo in itertools.product(*word_groups):
+        words_part = [
+            {'subject': {'operator': '~', 'values': [alt]}} for alt in combo
+        ]
+        variants.append(pre + words_part + post)
+    return variants
 
 
 def _is_meta_status(values: list[str]) -> bool:
@@ -298,5 +336,6 @@ __all__ = [
     'SearchQuery',
     'parse',
     'build_api_filters',
+    'build_api_filter_variants',
     'query_to_field_strings',
 ]

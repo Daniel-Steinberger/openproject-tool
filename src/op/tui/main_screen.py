@@ -219,7 +219,7 @@ class MainScreen(Screen[None]):
 
     async def _reload_with_query(self, query) -> None:  # noqa: ANN001
         """Replace the task list via a fresh API call using the new query."""
-        from op.search import build_api_filters
+        from op.search import build_api_filter_variants
 
         if self.client is None:
             self.notify('No API client — cannot reload', severity='warning')
@@ -229,8 +229,10 @@ class MainScreen(Screen[None]):
                 wp = await self.client.get_work_package(query.task_id)
                 new_tasks = [wp] if wp is not None else []
             else:
-                api_filters = build_api_filters(query, self.config.remote)
-                new_tasks = await self.client.search_work_packages(filters=api_filters)
+                filter_variants = build_api_filter_variants(query, self.config.remote)
+                new_tasks = await self.client.search_work_packages_variants(
+                    filter_variants=filter_variants
+                )
         except Exception as exc:  # noqa: BLE001
             log.exception('Filter reload failed')
             self.notify(f'Filter failed: {exc}', severity='error', timeout=8)

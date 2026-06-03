@@ -241,6 +241,34 @@ class OpenProjectClient:
 
         return [WorkPackage.from_api(e) for e in elements]
 
+    async def search_work_packages_variants(
+        self,
+        *,
+        filter_variants: list[list[dict[str, T.Any]]],
+        page_size: int = _DEFAULT_PAGE_SIZE,
+    ) -> list[WorkPackage]:
+        """Run each filter variant and union the results (dedup by id, order preserved).
+
+        Used for OR-search: OpenProject can only AND filters, so an OR across
+        subject substrings is expressed as several queries whose results we merge.
+        """
+        if len(filter_variants) <= 1:
+            return await self.search_work_packages(
+                filters=filter_variants[0] if filter_variants else None,
+                page_size=page_size,
+            )
+        per_variant = await asyncio.gather(
+            *(
+                self.search_work_packages(filters=f, page_size=page_size)
+                for f in filter_variants
+            )
+        )
+        seen: dict[int, WorkPackage] = {}
+        for wps in per_variant:
+            for wp in wps:
+                seen.setdefault(wp.id, wp)
+        return list(seen.values())
+
     async def update_work_package(
         self, wp_id: int, *, lock_version: int, changes: dict[str, T.Any]
     ) -> WorkPackage:

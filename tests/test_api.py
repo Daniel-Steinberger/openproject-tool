@@ -416,6 +416,42 @@ class TestWorkPackages:
         assert results[0].id == 1
         assert results[-1].id == 250
 
+    async def test_search_variants_single_delegates(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(
+            return_value=httpx.Response(
+                200, json=_collection([_work_package(id=1), _work_package(id=2)])
+            )
+        )
+        async with client:
+            results = await client.search_work_packages_variants(
+                filter_variants=[[{'subject': {'operator': '~', 'values': ['x']}}]]
+            )
+        assert [wp.id for wp in results] == [1, 2]
+
+    async def test_search_variants_unions_and_dedups(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        def responder(request: httpx.Request) -> httpx.Response:
+            sent = json.loads(request.url.params['filters'])
+            term = sent[0]['subject']['values'][0]
+            if term == 'sapv':
+                return httpx.Response(200, json=_collection([_work_package(id=1), _work_package(id=2)]))
+            return httpx.Response(200, json=_collection([_work_package(id=2), _work_package(id=3)]))
+
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(side_effect=responder)
+        async with client:
+            results = await client.search_work_packages_variants(
+                filter_variants=[
+                    [{'subject': {'operator': '~', 'values': ['sapv']}}],
+                    [{'subject': {'operator': '~', 'values': ['pallinet']}}],
+                ]
+            )
+        # id=2 appears in both → deduped, first-seen order preserved
+        assert sorted(wp.id for wp in results) == [1, 2, 3]
+        assert len(results) == 3
+
     async def test_update_work_package_sends_patch_with_lock_version(
         self, client: OpenProjectClient, respx_mock: respx.MockRouter
     ) -> None:

@@ -236,6 +236,14 @@ class TestInteractiveFilter:
                     )
                 ]
 
+            async def search_work_packages_variants(
+                self, *, filter_variants, page_size=100,  # noqa: ANN001
+            ):
+                return await self.search_work_packages(
+                    filters=filter_variants[0] if filter_variants else None,
+                    page_size=page_size,
+                )
+
             async def update_work_package(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN202
                 return None
 

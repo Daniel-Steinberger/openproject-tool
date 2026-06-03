@@ -3,7 +3,13 @@ from __future__ import annotations
 import pytest
 
 from op.config import DefaultsConfig, RemoteConfig
-from op.search import SearchQuery, build_api_filters, parse, query_to_field_strings
+from op.search import (
+    SearchQuery,
+    build_api_filter_variants,
+    build_api_filters,
+    parse,
+    query_to_field_strings,
+)
 
 
 class TestIdLookup:
@@ -327,6 +333,64 @@ class TestBuildApiFilters:
         q = SearchQuery(filters={'bogus': ['x']})
         with pytest.raises(ValueError, match='bogus'):
             build_api_filters(q, RemoteConfig())
+
+
+class TestOrVariants:
+    def test_no_or_yields_single_variant(self) -> None:
+        q = SearchQuery(words=['deploy'], filters={'status': ['open']})
+        variants = build_api_filter_variants(q, RemoteConfig())
+        assert variants == [[
+            {'subject': {'operator': '~', 'values': ['deploy']}},
+            {'status': {'operator': 'o'}},
+        ]]
+
+    def test_single_token_or_fans_out(self) -> None:
+        q = SearchQuery(words=['sapv|pallinet'])
+        variants = build_api_filter_variants(q, RemoteConfig())
+        assert variants == [
+            [{'subject': {'operator': '~', 'values': ['sapv']}}],
+            [{'subject': {'operator': '~', 'values': ['pallinet']}}],
+        ]
+
+    def test_or_keeps_other_filters_in_every_variant(self) -> None:
+        q = SearchQuery(words=['sapv|pallinet'], filters={'status': ['open']})
+        variants = build_api_filter_variants(q, RemoteConfig())
+        assert variants == [
+            [
+                {'subject': {'operator': '~', 'values': ['sapv']}},
+                {'status': {'operator': 'o'}},
+            ],
+            [
+                {'subject': {'operator': '~', 'values': ['pallinet']}},
+                {'status': {'operator': 'o'}},
+            ],
+        ]
+
+    def test_two_or_tokens_form_cartesian_product(self) -> None:
+        q = SearchQuery(words=['a|b', 'c|d'])
+        variants = build_api_filter_variants(q, RemoteConfig())
+        # (a or b) AND (c or d) → 4 variants, each pairing one from each group
+        assert variants == [
+            [{'subject': {'operator': '~', 'values': ['a']}},
+             {'subject': {'operator': '~', 'values': ['c']}}],
+            [{'subject': {'operator': '~', 'values': ['a']}},
+             {'subject': {'operator': '~', 'values': ['d']}}],
+            [{'subject': {'operator': '~', 'values': ['b']}},
+             {'subject': {'operator': '~', 'values': ['c']}}],
+            [{'subject': {'operator': '~', 'values': ['b']}},
+             {'subject': {'operator': '~', 'values': ['d']}}],
+        ]
+
+    def test_empty_alternatives_are_dropped(self) -> None:
+        q = SearchQuery(words=['sapv|'])
+        variants = build_api_filter_variants(q, RemoteConfig())
+        assert variants == [[{'subject': {'operator': '~', 'values': ['sapv']}}]]
+
+    def test_build_api_filters_returns_first_variant(self) -> None:
+        q = SearchQuery(words=['sapv|pallinet'])
+        assert build_api_filters(q, RemoteConfig()) == [
+            {'subject': {'operator': '~', 'values': ['sapv']}},
+        ]
 
 
 class TestQueryToFieldStrings:

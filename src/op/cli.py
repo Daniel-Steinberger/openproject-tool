@@ -16,7 +16,7 @@ from op.api import AuthError, OpenProjectClient, OpenProjectError
 from op.config import Config, DefaultsConfig, default_config_path, get_api_key, load_config
 from op.logging_setup import setup_logging
 from op.models import WorkPackage
-from op.search import FILTER_KEYS, build_api_filters, parse
+from op.search import FILTER_KEYS, build_api_filter_variants, parse
 from op.tui.app import OpApp
 
 
@@ -139,11 +139,11 @@ async def run(
             return 0
 
         try:
-            api_filters = build_api_filters(query, config.remote)
+            filter_variants = build_api_filter_variants(query, config.remote)
         except ValueError as exc:
             console.print(f'[red]Invalid search query:[/red] {exc}')
             return 2
-        results = await client.search_work_packages(filters=api_filters)
+        results = await client.search_work_packages_variants(filter_variants=filter_variants)
         for wp in results:
             console.print(format_result_line(wp, config.connection.base_url))
         return 0
@@ -157,8 +157,8 @@ async def _initial_tasks(
         return [wp] if wp else []
     if not query.words and not query.filters and not query.empty_filters:
         return []
-    api_filters = build_api_filters(query, config.remote)
-    return await client.search_work_packages(filters=api_filters)
+    filter_variants = build_api_filter_variants(query, config.remote)
+    return await client.search_work_packages_variants(filter_variants=filter_variants)
 
 
 def format_result_line(wp: WorkPackage, base_url: str) -> Text:
