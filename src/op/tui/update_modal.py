@@ -12,7 +12,12 @@ from op.config import RemoteConfig
 from op.date_shortcuts import next_free_day, parse_shortcut
 from op.models import WorkPackage
 from op.tui.calendar_modal import CalendarModal
-from op.tui.picker_widget import CompactInput, PickerWidget
+from op.tui.picker_widget import (
+    CompactInput,
+    PickerWidget,
+    SearchableInput,
+    WorkPackagePickerScreen,
+)
 from op.tui.update_form import UpdateForm
 
 _WORKLOAD_SHORTCUTS = {'next', 'nf'}
@@ -94,16 +99,32 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             yield Label(f'Update {self._target_count} task(s)', id='update-header')
             with VerticalScroll():
                 with Grid():
+                    wp = self._wp
                     yield Label('Status:')
-                    yield _make_picker(self._remote.statuses, id='sel-status')
+                    yield _make_picker(
+                        self._remote.statuses, id='sel-status',
+                        blank_label=wp.status_name if wp else None,
+                    )
                     yield Label('Type:')
-                    yield _make_picker(self._remote.types, id='sel-type')
+                    yield _make_picker(
+                        self._remote.types, id='sel-type',
+                        blank_label=wp.type_name if wp else None,
+                    )
                     yield Label('Priority:')
-                    yield _make_picker(self._remote.priorities, id='sel-priority')
+                    yield _make_picker(
+                        self._remote.priorities, id='sel-priority',
+                        blank_label=(wp.priority_name if wp else None),
+                    )
                     yield Label('Project:')
-                    yield _make_picker(self._remote.projects, id='sel-project')
+                    yield _make_picker(
+                        self._remote.projects, id='sel-project',
+                        blank_label=wp.project_name if wp else None,
+                    )
                     yield Label('Assignee:')
-                    yield _make_assignee_picker(self._remote.users, self._remote.groups)
+                    yield _make_assignee_picker(
+                        self._remote.users, self._remote.groups,
+                        blank_label=(wp.assignee_name or 'nicht zugewiesen') if wp else None,
+                    )
                     yield Label('+ Beobachter:')
                     yield _make_picker(self._remote.users, id='sel-add-watcher')
                     yield Label('- Beobachter:')
@@ -137,9 +158,9 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                         id='input-due',
                     )
                     yield Label('Parent:')
-                    yield CompactInput(
+                    yield SearchableInput(
                         value=str(self._wp.parent_id) if self._wp and self._wp.parent_id else '',
-                        placeholder='ID (z.B. 1234), "-" entfernt Parent',
+                        placeholder='ID, "/" zum Suchen, "-" entfernt Parent',
                         id='input-parent',
                     )
                     if self._show_scalars:
@@ -295,6 +316,31 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             return False
         return True
 
+    def on_searchable_input_search_requested(
+        self, event: SearchableInput.SearchRequested
+    ) -> None:
+        if event.widget.id == 'input-parent':
+            self._open_parent_search()
+
+    def _open_parent_search(self) -> None:
+        if self._client is None:
+            return
+        target = self.query_one('#input-parent', Input)
+        type_ids = _parent_type_ids(self._remote)
+
+        def _on_pick(wp_id: int | None) -> None:
+            if wp_id is not None:
+                target.value = str(wp_id)
+
+        self.app.push_screen(
+            WorkPackagePickerScreen(
+                client=self._client,
+                type_ids=type_ids,
+                placeholder='Projekt / Teilprojekt / Arbeitspaket suchen…',
+            ),
+            _on_pick,
+        )
+
     def action_insert_today(self) -> None:
         target = self._focused_date_input()
         if target is None:
@@ -406,13 +452,22 @@ def _resolve_date_field(raw: str) -> str:
 
 
 def _make_picker(
-    options: dict[int, str], *, id: str, value: int | None = None  # noqa: A002
+    options: dict[int, str],
+    *,
+    id: str,  # noqa: A002
+    value: int | None = None,
+    blank_label: str | None = None,
 ) -> PickerWidget:
     opts = [(name, oid) for oid, name in sorted(options.items(), key=lambda x: x[1])]
-    return PickerWidget(opts, id=id, value=value)
+    return PickerWidget(opts, id=id, value=value, blank_label=blank_label)
 
 
-def _make_assignee_picker(users: dict[int, str], groups: dict[int, str]) -> PickerWidget:
+def _make_assignee_picker(
+    users: dict[int, str],
+    groups: dict[int, str],
+    *,
+    blank_label: str | None = None,
+) -> PickerWidget:
     opts: list[tuple[str, str]] = [
         (name, f'u:{uid}') for uid, name in sorted(users.items(), key=lambda x: x[1])
     ]
@@ -420,4 +475,14 @@ def _make_assignee_picker(users: dict[int, str], groups: dict[int, str]) -> Pick
         (f'[Group] {name}', f'g:{gid}')
         for gid, name in sorted(groups.items(), key=lambda x: x[1])
     ]
-    return PickerWidget(opts, id='sel-assignee')
+    return PickerWidget(opts, id='sel-assignee', blank_label=blank_label)
+
+
+# Work-package types that represent the project hierarchy (parents of normal tasks).
+_PARENT_TYPE_NAMES = ('Projekt', 'Teilprojekt', 'Arbeitspaket')
+
+
+def _parent_type_ids(remote: RemoteConfig) -> list[int]:
+    """Resolve the hierarchy type ids (Projekt/Teilprojekt/Arbeitspaket) from remote types."""
+    wanted = {n.casefold() for n in _PARENT_TYPE_NAMES}
+    return [tid for tid, name in remote.types.items() if name.casefold() in wanted]

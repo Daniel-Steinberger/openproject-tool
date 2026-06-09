@@ -69,7 +69,8 @@ queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-app
 |---|---|---|
 | MainScreen | `tui/main_screen.py` | `space` Auswahl, `i` Invert, `u` Edit, `g` Review, `f` Filter, `o` Browser, `/` Suche, `q` Quit |
 | DetailScreen | `tui/detail_screen.py` | `e` Edit, `c` Kommentar, `/` Textsuche (n/N), `o` Browser |
-| UpdateModal | `tui/update_modal.py` | `g` Apply, `q`/Esc Cancel, `Ctrl+D` Kalender, `Ctrl+T` Today, `Ctrl+N` Next Free Day |
+| UpdateModal | `tui/update_modal.py` | `g` Apply, `q`/Esc Cancel, `Ctrl+D` Kalender, `Ctrl+T` Today, `Ctrl+N` Next Free Day, `/` Parent-Suche (nur bei Fokus im Parent-Feld) |
+| WorkPackagePickerScreen | `tui/picker_widget.py` | Inkrementelle Task-Suche (Substring), Enter wählt, Esc Cancel |
 | FilterScreen | `tui/filter_screen.py` | `Ctrl+G`/Enter Apply, Esc Cancel |
 | ProjectFilterScreen | `tui/project_filter_screen.py` | Hierarchie-aware, persistiert in Config |
 | ReviewScreen | `tui/review_screen.py` | Batch-Review vor Apply |

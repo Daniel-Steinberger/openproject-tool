@@ -833,3 +833,141 @@ class TestCustomFieldSelect:
             except NoMatches:
                 found = False
             assert not found
+
+
+class TestCurrentValuesAsBlankLabel:
+    async def test_link_pickers_carry_current_values(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            # task 1: status 'Neu', type 'Task', project 'Web', no assignee
+            assert modal.query_one('#sel-status', PickerWidget)._label_for(None) == \
+                '— no change — (Neu)'
+            assert modal.query_one('#sel-type', PickerWidget)._label_for(None) == \
+                '— no change — (Task)'
+            assert modal.query_one('#sel-project', PickerWidget)._label_for(None) == \
+                '— no change — (Web)'
+            assert modal.query_one('#sel-assignee', PickerWidget)._label_for(None) == \
+                '— no change — (nicht zugewiesen)'
+
+    async def test_batch_edit_has_no_blank_labels(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('space')
+            await pilot.press('down')
+            await pilot.press('space')
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            assert modal.query_one('#sel-status', PickerWidget)._label_for(None) == \
+                '— no change —'
+
+
+class TestParentSearch:
+    async def test_slash_hint_only_active_on_parent_input(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+
+            # subject is a plain input → no '/' hint in the footer
+            modal.query_one('#input-subject', Input).focus()
+            await pilot.pause()
+            assert 'slash' not in modal.active_bindings
+
+            # parent is a SearchableInput → '/' hint shows
+            modal.query_one('#input-parent', Input).focus()
+            await pilot.pause()
+            assert 'slash' in modal.active_bindings
+            assert modal.active_bindings['slash'].binding.description == 'Task-Suche'
+
+    async def test_message_opens_work_package_picker(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+        from op.tui.picker_widget import SearchableInput, WorkPackagePickerScreen
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            parent = modal.query_one('#input-parent', Input)
+            assert isinstance(parent, SearchableInput)
+            parent.post_message(SearchableInput.SearchRequested(parent))
+            await pilot.pause()
+            assert isinstance(app.screen, WorkPackagePickerScreen)
+
+    async def test_slash_key_opens_picker_without_typing(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+        from op.tui.picker_widget import WorkPackagePickerScreen
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            parent = modal.query_one('#input-parent', Input)
+            parent.focus()
+            await pilot.pause()
+            await pilot.press('slash')
+            await pilot.pause()
+            assert isinstance(app.screen, WorkPackagePickerScreen)
+            # '/' must not have been typed into the field
+            assert parent.value == ''
+
+    async def test_slash_types_normally_in_other_input(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from textual.widgets import Input
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            subject = modal.query_one('#input-subject', Input)
+            subject.focus()
+            subject.value = ''
+            await pilot.pause()
+            await pilot.press('slash')
+            await pilot.pause()
+            assert isinstance(app.screen, UpdateModal)
+            assert subject.value == '/'
+
+    def test_parent_type_ids_resolves_hierarchy_types(self) -> None:
+        from op.tui.update_modal import _parent_type_ids
+
+        remote = RemoteConfig(
+            types={10: 'Projekt', 9: 'Teilprojekt', 8: 'Arbeitspaket',
+                   1: 'Task', 7: 'Bug'},
+        )
+        assert sorted(_parent_type_ids(remote)) == [8, 9, 10]
+
+    def test_parent_type_ids_empty_when_types_missing(self) -> None:
+        from op.tui.update_modal import _parent_type_ids
+
+        assert _parent_type_ids(RemoteConfig(types={1: 'Task'})) == []
