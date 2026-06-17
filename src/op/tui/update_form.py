@@ -29,6 +29,11 @@ class UpdateForm:
         self._remove_watcher_ids: list[int] = []
         self._custom_field_links: dict[int, int | None] = {}
         self._custom_field_options: dict[int, int | None] = {}
+        # Multi-value CFs: working id-list per field, the href-kind ('user'|'option'),
+        # and whether the user actually touched it (only dirty ones get PATCHed).
+        self._custom_field_multi: dict[int, list[int]] = {}
+        self._custom_field_multi_kind: dict[int, str] = {}
+        self._custom_field_multi_dirty: set[int] = set()
         self._parent_id: int | None = None
         self._clear_parent: bool = False
 
@@ -183,6 +188,27 @@ class UpdateForm:
         """Set (or clear) a list-type custom field. Pass None to explicitly clear."""
         self._custom_field_options[cf_id] = option_id
 
+    # --- multi-value custom fields ---------------------------------------
+
+    def init_custom_field_multi(self, cf_id: int, ids: list[int], kind: str) -> None:
+        """Seed the working set for a multi-value CF (e.g. from the task's current
+        values) without marking it changed — only a later toggle counts as an edit."""
+        self._custom_field_multi[cf_id] = list(ids)
+        self._custom_field_multi_kind[cf_id] = kind
+
+    def toggle_custom_field_multi(self, cf_id: int, value_id: int, kind: str) -> None:
+        """Add the value to a multi-value CF, or remove it if already present."""
+        self._custom_field_multi_kind[cf_id] = kind
+        current = self._custom_field_multi.setdefault(cf_id, [])
+        if value_id in current:
+            current.remove(value_id)
+        else:
+            current.append(value_id)
+        self._custom_field_multi_dirty.add(cf_id)
+
+    def custom_field_multi_ids(self, cf_id: int) -> list[int]:
+        return list(self._custom_field_multi.get(cf_id, []))
+
     # --- derived ---------------------------------------------------------
 
     @property
@@ -249,6 +275,12 @@ class UpdateForm:
         for cf_id, option_id in other._custom_field_options.items():
             self._custom_field_options[cf_id] = option_id
 
+        # multi-value CFs: last-writer-wins for the dirty ones
+        for cf_id in other._custom_field_multi_dirty:
+            self._custom_field_multi[cf_id] = list(other._custom_field_multi[cf_id])
+            self._custom_field_multi_kind[cf_id] = other._custom_field_multi_kind[cf_id]
+            self._custom_field_multi_dirty.add(cf_id)
+
     def api_changes(self) -> dict[str, T.Any]:
         changes: dict[str, T.Any] = {}
 
@@ -280,6 +312,14 @@ class UpdateForm:
                 links[f'customField{cf_id}'] = {'href': f'/api/v3/custom_options/{option_id}'}
             else:
                 links[f'customField{cf_id}'] = {'href': None}
+        for cf_id in self._custom_field_multi_dirty:
+            ids = self._custom_field_multi.get(cf_id, [])
+            base = (
+                '/api/v3/users'
+                if self._custom_field_multi_kind.get(cf_id) == 'user'
+                else '/api/v3/custom_options'
+            )
+            links[f'customField{cf_id}'] = [{'href': f'{base}/{i}'} for i in ids]
         if links:
             changes['_links'] = links
 
@@ -350,4 +390,10 @@ class UpdateForm:
             cf_opts = (custom_field_options or {}).get(cf_id, {})
             opt_name = cf_opts.get(option_id, f'#{option_id}') if option_id is not None else '(none)'
             lines.append(f'{cf_name} → {opt_name}')
+        for cf_id in self._custom_field_multi_dirty:
+            cf_name = (custom_fields or {}).get(cf_id, f'CF#{cf_id}')
+            ids = self._custom_field_multi.get(cf_id, [])
+            lookup = (custom_field_options or {}).get(cf_id, {}) or (users or {})
+            names = [lookup.get(i, f'#{i}') for i in ids]
+            lines.append(f'{cf_name} → {", ".join(names) if names else "(none)"}')
         return ', '.join(lines)

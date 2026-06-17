@@ -45,13 +45,14 @@ async def load_remote_data(client: OpenProjectClient, config_path: Path) -> None
         custom_field_users={
             cf.id: cf.allowed_users
             for cf in custom_fields
-            if cf.field_format == 'user' and cf.allowed_users
+            if cf.field_format in ('user', '[]user') and cf.allowed_users
         },
         custom_field_options={
             cf.id: cf.allowed_options
             for cf in custom_fields
             if cf.allowed_options
         },
+        custom_field_multi=[cf.id for cf in custom_fields if cf.is_multi],
     )
 
 

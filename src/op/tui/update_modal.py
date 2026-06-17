@@ -92,6 +92,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         self._wp = wp
         self._show_scalars = target_count == 1
         self._client = client
+        self._multi_cfs: set[int] = set(remote.custom_field_multi)
         self._today_override: date | None = None
 
     def compose(self):  # noqa: ANN201
@@ -131,20 +132,28 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                     yield _make_picker(self._remote.users, id='sel-remove-watcher')
                     for _cf_id, _cf_users in sorted(self._remote.custom_field_users.items()):
                         _cf_name = self._remote.custom_fields.get(_cf_id, f'CF #{_cf_id}')
-                        _initial = (
-                            self._wp.custom_field_links.get(_cf_id)
-                            if self._wp is not None else None
-                        )
                         yield Label(f'{_cf_name}:')
-                        yield _make_picker(_cf_users, id=f'sel-cf-{_cf_id}', value=_initial)
+                        if _cf_id in self._multi_cfs:
+                            self._seed_multi_cf(_cf_id, 'user')
+                            yield _make_picker(_cf_users, id=f'sel-cf-{_cf_id}')
+                        else:
+                            _initial = (
+                                self._wp.custom_field_links.get(_cf_id)
+                                if self._wp is not None else None
+                            )
+                            yield _make_picker(_cf_users, id=f'sel-cf-{_cf_id}', value=_initial)
                     for _cf_id, _cf_opts in sorted(self._remote.custom_field_options.items()):
                         _cf_name = self._remote.custom_fields.get(_cf_id, f'CF #{_cf_id}')
-                        _initial = (
-                            self._wp.custom_field_links.get(_cf_id)
-                            if self._wp is not None else None
-                        )
                         yield Label(f'{_cf_name}:')
-                        yield _make_picker(_cf_opts, id=f'sel-cfo-{_cf_id}', value=_initial)
+                        if _cf_id in self._multi_cfs:
+                            self._seed_multi_cf(_cf_id, 'option')
+                            yield _make_picker(_cf_opts, id=f'sel-cfo-{_cf_id}')
+                        else:
+                            _initial = (
+                                self._wp.custom_field_links.get(_cf_id)
+                                if self._wp is not None else None
+                            )
+                            yield _make_picker(_cf_opts, id=f'sel-cfo-{_cf_id}', value=_initial)
                     yield Label('Start:')
                     yield CompactInput(
                         value=_iso(self._wp.start_date if self._wp else None),
@@ -171,14 +180,48 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                         )
                         yield Label('Description:', classes='ta-label')
                         yield TextArea(self._wp.description or '' if self._wp else '', id='ta-description')
-                info = self._watcher_info_text()
-                if info:
-                    yield Label(info, id='lbl-watchers-info')
             yield Footer()
 
     def on_mount(self) -> None:
+        self._refresh_watcher_display()
+        for cf_id in self._multi_cfs:
+            picker_id = self._multi_picker_id(cf_id)
+            if picker_id is not None:
+                self._refresh_multi_cf_display(cf_id, picker_id)
         if self._show_scalars and self._wp is not None and self._client is not None:
             self.run_worker(self._load_current_watchers(), exclusive=False)
+
+    def _seed_multi_cf(self, cf_id: int, kind: str) -> None:
+        """Pre-fill a multi-value CF's working set with the task's current values."""
+        current = (
+            self._wp.custom_field_multi_links.get(cf_id, [])
+            if self._wp is not None else []
+        )
+        self.form.init_custom_field_multi(cf_id, list(current), kind)
+
+    def _multi_picker_id(self, cf_id: int) -> str | None:
+        if cf_id in self._remote.custom_field_users:
+            return f'sel-cf-{cf_id}'
+        if cf_id in self._remote.custom_field_options:
+            return f'sel-cfo-{cf_id}'
+        return None
+
+    def _multi_cf_lookup(self, cf_id: int) -> dict[int, str]:
+        return (
+            self._remote.custom_field_options.get(cf_id)
+            or self._remote.custom_field_users.get(cf_id)
+            or {}
+        )
+
+    def _refresh_multi_cf_display(self, cf_id: int, picker_id: str) -> None:
+        try:
+            picker = self.query_one(f'#{picker_id}', PickerWidget)
+        except Exception:  # noqa: BLE001
+            return
+        lookup = self._multi_cf_lookup(cf_id)
+        ids = self.form.custom_field_multi_ids(cf_id)
+        names = ', '.join(lookup.get(i, f'#{i}') for i in ids)
+        picker.set_blank_display(names or None)
 
     async def _load_current_watchers(self) -> None:
         try:
@@ -193,15 +236,21 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         except Exception:  # noqa: BLE001
             pass
 
-    def _watcher_info_text(self) -> str:
-        parts: list[str] = []
-        for uid in self.form.add_watcher_ids:
-            name = self._remote.users.get(uid, f'#{uid}')
-            parts.append(f'+{name}')
-        for uid in self.form.remove_watcher_ids:
-            name = self._remote.users.get(uid, f'#{uid}')
-            parts.append(f'-{name}')
-        return f'Geplant: {" ".join(parts)}' if parts else ''
+    def _watcher_names(self, ids: list[int]) -> str:
+        return ', '.join(self._remote.users.get(uid, f'#{uid}') for uid in ids)
+
+    def _refresh_watcher_display(self) -> None:
+        """Show the pending watcher additions/removals directly in their pickers,
+        instead of the misleading '— no change —'."""
+        self._set_watcher_picker('sel-add-watcher', self.form.add_watcher_ids)
+        self._set_watcher_picker('sel-remove-watcher', self.form.remove_watcher_ids)
+
+    def _set_watcher_picker(self, picker_id: str, ids: list[int]) -> None:
+        try:
+            picker = self.query_one(f'#{picker_id}', PickerWidget)
+        except Exception:  # noqa: BLE001
+            return
+        picker.set_blank_display(self._watcher_names(ids) if ids else None)
 
     def on_key(self, event) -> None:  # noqa: ANN001
         """Pfeil hoch/runter navigiert zwischen Feldern (außer in TextArea)."""
@@ -230,21 +279,35 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
             if value is not None:
                 self.form.add_watcher(int(value))
                 event.widget._reset()
+                self._refresh_watcher_display()
             return
 
         if picker_id == 'sel-remove-watcher':
             if value is not None:
                 self.form.remove_watcher(int(value))
                 event.widget._reset()
+                self._refresh_watcher_display()
             return
 
         if picker_id.startswith('sel-cfo-'):
             cf_id = int(picker_id[len('sel-cfo-'):])
+            if cf_id in self._multi_cfs:
+                if value is not None:
+                    self.form.toggle_custom_field_multi(cf_id, int(value), 'option')
+                    event.widget._reset()
+                    self._refresh_multi_cf_display(cf_id, picker_id)
+                return
             self.form.set_custom_field_option(cf_id, int(value) if value is not None else None)
             return
 
         if picker_id.startswith('sel-cf-'):
             cf_id = int(picker_id[len('sel-cf-'):])
+            if cf_id in self._multi_cfs:
+                if value is not None:
+                    self.form.toggle_custom_field_multi(cf_id, int(value), 'user')
+                    event.widget._reset()
+                    self._refresh_multi_cf_display(cf_id, picker_id)
+                return
             self.form.set_custom_field_user(cf_id, int(value) if value is not None else None)
             return
 

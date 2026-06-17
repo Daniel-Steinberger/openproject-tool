@@ -419,6 +419,81 @@ class TestCustomFieldOption:
         assert '(none)' in summary
 
 
+class TestMultiValueCustomField:
+    def test_toggle_adds_then_sends_array(self) -> None:
+        form = UpdateForm()
+        form.toggle_custom_field_multi(38, 87, 'option')
+        form.toggle_custom_field_multi(38, 88, 'option')
+        assert form.api_changes() == {
+            '_links': {
+                'customField38': [
+                    {'href': '/api/v3/custom_options/87'},
+                    {'href': '/api/v3/custom_options/88'},
+                ]
+            }
+        }
+
+    def test_toggle_removes_when_already_present(self) -> None:
+        form = UpdateForm()
+        form.toggle_custom_field_multi(38, 87, 'option')
+        form.toggle_custom_field_multi(38, 88, 'option')
+        form.toggle_custom_field_multi(38, 87, 'option')  # toggle off
+        assert form.custom_field_multi_ids(38) == [88]
+
+    def test_user_kind_uses_users_href(self) -> None:
+        form = UpdateForm()
+        form.toggle_custom_field_multi(30, 5, 'user')
+        assert form.api_changes() == {
+            '_links': {'customField30': [{'href': '/api/v3/users/5'}]}
+        }
+
+    def test_init_does_not_count_as_change(self) -> None:
+        form = UpdateForm()
+        form.init_custom_field_multi(38, [87], 'option')
+        assert form.api_changes() == {}
+        assert not form.has_changes
+        assert form.custom_field_multi_ids(38) == [87]
+
+    def test_toggle_after_init_sends_full_set(self) -> None:
+        form = UpdateForm()
+        form.init_custom_field_multi(38, [87], 'option')
+        form.toggle_custom_field_multi(38, 88, 'option')
+        assert form.api_changes() == {
+            '_links': {
+                'customField38': [
+                    {'href': '/api/v3/custom_options/87'},
+                    {'href': '/api/v3/custom_options/88'},
+                ]
+            }
+        }
+
+    def test_emptying_sends_empty_array(self) -> None:
+        form = UpdateForm()
+        form.init_custom_field_multi(38, [87], 'option')
+        form.toggle_custom_field_multi(38, 87, 'option')  # remove the only one
+        assert form.api_changes() == {'_links': {'customField38': []}}
+
+    def test_merge_from_propagates_dirty_multi(self) -> None:
+        base = UpdateForm()
+        other = UpdateForm()
+        other.toggle_custom_field_multi(38, 87, 'option')
+        base.merge_from(other)
+        assert base.custom_field_multi_ids(38) == [87]
+        assert base.api_changes() == {
+            '_links': {'customField38': [{'href': '/api/v3/custom_options/87'}]}
+        }
+
+    def test_summary_lists_multi_names(self) -> None:
+        form = UpdateForm()
+        form.toggle_custom_field_multi(38, 87, 'option')
+        form.toggle_custom_field_multi(38, 88, 'option')
+        summary = form.summary(
+            custom_fields={38: 'Weitere Personen'},
+            custom_field_options={38: {87: 'Elisa', 88: 'Anton'}},
+        )
+        assert 'Weitere Personen → Elisa, Anton' in summary
+
+
 class TestCombined:
     def test_all_fields_at_once(self) -> None:
         form = UpdateForm()

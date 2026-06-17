@@ -51,6 +51,12 @@ class TestSimpleLookups:
         cf = CustomField(id=3, name='Story Points', field_format='int')
         assert cf.field_format == 'int'
 
+    def test_custom_field_is_multi(self) -> None:
+        assert CustomField(id=1, name='X', field_format='[]customoption').is_multi
+        assert CustomField(id=2, name='Y', field_format='[]user').is_multi
+        assert not CustomField(id=3, name='Z', field_format='customoption').is_multi
+        assert not CustomField(id=4, name='W', field_format='user').is_multi
+
     def test_group(self) -> None:
         g = Group(id=12, name='DevOps-Team')
         assert g.id == 12
@@ -330,6 +336,23 @@ class TestFromApi:
         }
         wp = WorkPackage.from_api(payload)
         assert wp.custom_field_links.get(42) is None
+
+    def test_work_package_parses_multi_value_custom_field(self) -> None:
+        payload = {
+            '_type': 'WorkPackage', 'id': 1, 'subject': 'S', 'lockVersion': 1,
+            '_links': {
+                'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
+                'project': {'href': '/api/v3/projects/10', 'title': 'P'},
+                'customField38': [
+                    {'href': '/api/v3/custom_options/87', 'title': 'Elisa'},
+                    {'href': '/api/v3/custom_options/88', 'title': 'Anton'},
+                ],
+            },
+        }
+        wp = WorkPackage.from_api(payload)
+        assert wp.custom_field_multi_links.get(38) == [87, 88]
+        assert 38 not in wp.custom_field_links
 
 
 class TestActivity:

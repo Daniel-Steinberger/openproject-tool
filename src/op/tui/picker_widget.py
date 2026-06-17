@@ -52,12 +52,15 @@ class PickerWidget(Widget, can_focus=True):
         self._options: list[tuple[str, int | str]] = list(options)
         self._value: int | str | None = value
         self._blank_label = blank_label
+        self._blank_display: str | None = None
         self._is_open: bool = False
 
     def compose(self) -> ComposeResult:
         yield Label(self._format_text(), id='picker-inner')
 
     def _format_text(self) -> str:
+        if self._value is None and self._blank_display is not None:
+            return self._blank_display
         return self._label_for(self._value)
 
     def _label_for(self, value: int | str | None) -> str:
@@ -96,6 +99,12 @@ class PickerWidget(Widget, can_focus=True):
 
     def set_options(self, options: list[tuple[str, int | str]]) -> None:
         self._options = list(options)
+        self._refresh_display()
+
+    def set_blank_display(self, text: str | None) -> None:
+        """Override the text shown while the picker holds no value (instead of
+        '— no change —'). Used for action-style pickers that accumulate a list."""
+        self._blank_display = text or None
         self._refresh_display()
 
     def _reset(self) -> None:

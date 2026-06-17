@@ -61,7 +61,7 @@ queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-app
 
 **`OperationQueue`** (`queue.py`): `id → PendingOperation`. Mehrfach-Edits auf derselben Task werden automatisch gemergt. Status: `pending → running → done/failed`.
 
-**`UpdateForm`** (`tui/update_form.py`): Pending-Changes State. `api_changes()` liefert das PATCH-JSON für OpenProject.
+**`UpdateForm`** (`tui/update_form.py`): Pending-Changes State. `api_changes()` liefert das PATCH-JSON für OpenProject. Mehrwertige Custom Fields (OpenProject-Typ `[]…`, erkannt via `CustomField.is_multi`, persistiert in `remote.custom_field_multi`) akkumulieren per `toggle_custom_field_multi()` und werden als HAL-Array gesendet; `init_custom_field_multi()` seedet den Ausgangswert ohne ihn als Änderung zu markieren. Im UpdateModal verhalten sich solche Picker wie die Beobachter-Felder (auswählen sammelt/toggelt, Anzeige der Auswahl direkt im Feld via `PickerWidget.set_blank_display()`).
 
 ### TUI-Screens und Keybindings
 

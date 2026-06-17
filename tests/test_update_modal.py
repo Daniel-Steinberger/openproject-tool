@@ -758,6 +758,132 @@ class TestWorkloadShortcut:
         # We can't assert on client.updates (no client); just ensure no crash.
 
 
+class TestWatcherInfo:
+    async def test_add_watcher_shown_in_picker_not_no_change(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('space')
+            await pilot.press('down')
+            await pilot.press('space')
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            add = modal.query_one('#sel-add-watcher', PickerWidget)
+            assert add._format_text() == '— no change —'
+
+            add.value = 5
+            await pilot.pause()
+            # picker resets its value but now displays the planned addition
+            assert add.value is None
+            assert add._format_text() == 'Max'
+            assert modal.form.add_watcher_ids == [5]
+
+    async def test_multiple_add_watchers_listed_in_picker(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            add = modal.query_one('#sel-add-watcher', PickerWidget)
+            add.value = 5
+            await pilot.pause()
+            add.value = 6
+            await pilot.pause()
+            assert add._format_text() == 'Max, Anna'
+            assert modal.form.add_watcher_ids == [5, 6]
+
+    async def test_remove_watcher_shown_in_picker(
+        self, app_factory: T.Callable[..., OpApp]
+    ) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            remove = modal.query_one('#sel-remove-watcher', PickerWidget)
+            remove.value = 6
+            await pilot.pause()
+            assert remove.value is None
+            assert remove._format_text() == 'Anna'
+            assert modal.form.remove_watcher_ids == [6]
+
+
+class TestMultiValueCustomField:
+    def _config_multi(self) -> Config:
+        remote = RemoteConfig(
+            statuses={1: 'Neu'}, types={1: 'Task'}, users={5: 'Max'},
+            projects={10: 'Web'},
+            custom_fields={38: 'Weitere Personen'},
+            custom_field_options={38: {87: 'Elisa', 88: 'Anton'}},
+            custom_field_multi=[38],
+        )
+        return Config(
+            connection=ConnectionConfig(base_url='https://op.example.com'),
+            defaults=DefaultsConfig(),
+            remote=remote,
+        )
+
+    async def test_multi_cf_accumulates_and_shows_in_picker(self) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        app = OpApp(tasks=[_wp(1), _wp(2)], config=self._config_multi())
+        async with app.run_test() as pilot:
+            await pilot.press('space')
+            await pilot.press('down')
+            await pilot.press('space')
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            picker = modal.query_one('#sel-cfo-38', PickerWidget)
+            assert picker._format_text() == '— no change —'
+
+            picker.value = 87
+            await pilot.pause()
+            picker.value = 88
+            await pilot.pause()
+            assert picker.value is None
+            assert picker._format_text() == 'Elisa, Anton'
+            assert modal.form.custom_field_multi_ids(38) == [87, 88]
+            assert modal.form.api_changes() == {
+                '_links': {
+                    'customField38': [
+                        {'href': '/api/v3/custom_options/87'},
+                        {'href': '/api/v3/custom_options/88'},
+                    ]
+                }
+            }
+
+    async def test_multi_cf_prefills_current_values_single_edit(self) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        wp = _wp(1)
+        wp.custom_field_multi_links = {38: [87]}
+        app = OpApp(tasks=[wp], config=self._config_multi())
+        async with app.run_test() as pilot:
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            picker = modal.query_one('#sel-cfo-38', PickerWidget)
+            assert picker._format_text() == 'Elisa'
+            # untouched → no change sent
+            assert modal.form.api_changes() == {}
+
+
 class TestCustomFieldSelect:
     """User-type custom fields get a PickerWidget in the UpdateModal."""
 

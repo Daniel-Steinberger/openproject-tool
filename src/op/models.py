@@ -122,6 +122,11 @@ class CustomField(_ApiModel):
     allowed_users: dict[int, str] = Field(default_factory=dict)
     allowed_options: dict[int, str] = Field(default_factory=dict)
 
+    @property
+    def is_multi(self) -> bool:
+        """True for multi-value CFs — OpenProject prefixes those types with '[]'."""
+        return self.field_format.strip().startswith('[]')
+
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> CustomField:
         allowed_users: dict[int, str] = {}
@@ -186,6 +191,7 @@ class WorkPackage(_ApiModel):
     lock_version: int
     custom_fields: dict[str, T.Any] = Field(default_factory=dict)
     custom_field_links: dict[int, int | None] = Field(default_factory=dict)
+    custom_field_multi_links: dict[int, list[int]] = Field(default_factory=dict)
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> WorkPackage:
@@ -196,11 +202,21 @@ class WorkPackage(_ApiModel):
         custom_fields = {k: v for k, v in payload.items() if k.startswith('customField')}
 
         custom_field_links: dict[int, int | None] = {}
+        custom_field_multi_links: dict[int, list[int]] = {}
         for link_key, link_val in links.items():
             m = _CUSTOM_FIELD_KEY_RE.match(link_key)
-            if m and isinstance(link_val, dict):
-                cf_id = int(m.group(1))
+            if not m:
+                continue
+            cf_id = int(m.group(1))
+            if isinstance(link_val, dict):
                 custom_field_links[cf_id] = id_from_href(link_val.get('href'))
+            elif isinstance(link_val, list):
+                ids = [
+                    id_from_href(item.get('href'))
+                    for item in link_val
+                    if isinstance(item, dict)
+                ]
+                custom_field_multi_links[cf_id] = [i for i in ids if i is not None]
 
         return cls(
             id=payload['id'],
@@ -224,6 +240,7 @@ class WorkPackage(_ApiModel):
             lock_version=payload['lockVersion'],
             custom_fields=custom_fields,
             custom_field_links=custom_field_links,
+            custom_field_multi_links=custom_field_multi_links,
         )
 
 

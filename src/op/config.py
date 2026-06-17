@@ -246,6 +246,7 @@ class RemoteConfig(BaseModel):
     custom_fields: dict[int, str] = Field(default_factory=dict)
     custom_field_users: dict[int, dict[int, str]] = Field(default_factory=dict)
     custom_field_options: dict[int, dict[int, str]] = Field(default_factory=dict)
+    custom_field_multi: list[int] = Field(default_factory=list)
 
     @property
     def pm_users(self) -> dict[int, str]:
@@ -320,6 +321,7 @@ def update_remote(
     custom_fields: dict[int, str] | None = None,
     custom_field_users: dict[int, dict[int, str]] | None = None,
     custom_field_options: dict[int, dict[int, str]] | None = None,
+    custom_field_multi: list[int] | None = None,
 ) -> None:
     """Replace the given remote subtables in-place, preserving comments and unrelated sections."""
     if not path.exists():
@@ -364,6 +366,9 @@ def update_remote(
                 inner[str(opt_id)] = value
             outer[str(cf_id)] = inner
         remote['custom_field_options'] = outer
+
+    if custom_field_multi is not None:
+        remote['custom_field_multi'] = [int(i) for i in custom_field_multi]
 
     path.write_text(tomlkit.dumps(doc))
 
