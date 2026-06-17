@@ -416,6 +416,39 @@ class TestWorkPackages:
         assert results[0].id == 1
         assert results[-1].id == 250
 
+    async def test_get_work_packages_by_ids_orders_by_input(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        # Server returns them in arbitrary order; we want input order back.
+        route = respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(
+            return_value=httpx.Response(
+                200, json=_collection([_work_package(id=7190), _work_package(id=6619)])
+            )
+        )
+        async with client:
+            results = await client.get_work_packages_by_ids([6619, 7190])
+        assert [wp.id for wp in results] == [6619, 7190]
+        sent = json.loads(route.calls.last.request.url.params['filters'])
+        assert sent == [{'id': {'operator': '=', 'values': ['6619', '7190']}}]
+
+    async def test_get_work_packages_by_ids_skips_unknown(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(
+            return_value=httpx.Response(200, json=_collection([_work_package(id=6619)]))
+        )
+        async with client:
+            results = await client.get_work_packages_by_ids([6619, 9999])
+        assert [wp.id for wp in results] == [6619]
+
+    async def test_get_work_packages_by_ids_empty_is_noop(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        async with client:
+            results = await client.get_work_packages_by_ids([])
+        assert results == []
+        assert not respx_mock.calls
+
     async def test_search_variants_single_delegates(
         self, client: OpenProjectClient, respx_mock: respx.MockRouter
     ) -> None:

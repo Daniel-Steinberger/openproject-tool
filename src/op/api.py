@@ -208,6 +208,18 @@ class OpenProjectClient:
         self._raise_for_status(response, 'GET', path)
         return WorkPackage.from_api(response.json())
 
+    async def get_work_packages_by_ids(self, ids: list[int]) -> list[WorkPackage]:
+        """Fetch several work packages by id, returned in the requested order.
+
+        Unknown ids are silently skipped (the server simply doesn't return them).
+        """
+        if not ids:
+            return []
+        filters = [{'id': {'operator': '=', 'values': [str(i) for i in ids]}}]
+        found = await self.search_work_packages(filters=filters)
+        by_id = {wp.id: wp for wp in found}
+        return [by_id[i] for i in ids if i in by_id]
+
     async def search_work_packages(
         self,
         *,

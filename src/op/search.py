@@ -27,13 +27,52 @@ _FILTER_KEY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
+_ID_RANGE_RE = re.compile(r'^(\d+)\.\.(\d+)$')
+# Guard against accidentally expanding an enormous range (e.g. 1..999999).
+_MAX_RANGE_SPAN = 1000
+
+
 @dataclass
 class SearchQuery:
     task_id: int | None = None
+    task_ids: list[int] = field(default_factory=list)
     words: list[str] = field(default_factory=list)
     filters: dict[str, list[str]] = field(default_factory=dict)
     empty_filters: set[str] = field(default_factory=set)
     default_filter_keys: set[str] = field(default_factory=set)
+
+
+def _expand_id_tokens(tokens: list[str]) -> list[int] | None:
+    """Expand pure ID / ID-range tokens into a de-duplicated ID list (input order).
+
+    Returns None if *any* token is neither a plain number (`123`) nor a range
+    (`120..125`) — in that case the tokens are treated as a normal word search.
+    Raises ValueError on a malformed range (start > end or span too large).
+    """
+    if not tokens:
+        return None
+    ids: list[int] = []
+    seen: set[int] = set()
+    for token in tokens:
+        if token.isdigit():
+            candidates = [int(token)]
+        else:
+            m = _ID_RANGE_RE.match(token)
+            if not m:
+                return None
+            start, end = int(m.group(1)), int(m.group(2))
+            if start > end:
+                raise ValueError(f'Invalid ID range {token!r}: start is greater than end')
+            if end - start + 1 > _MAX_RANGE_SPAN:
+                raise ValueError(
+                    f'ID range {token!r} spans more than {_MAX_RANGE_SPAN} IDs'
+                )
+            candidates = list(range(start, end + 1))
+        for cid in candidates:
+            if cid not in seen:
+                seen.add(cid)
+                ids.append(cid)
+    return ids
 
 
 def parse(tokens: list[str], *, defaults: DefaultsConfig | None = None) -> SearchQuery:
@@ -63,6 +102,12 @@ def parse(tokens: list[str], *, defaults: DefaultsConfig | None = None) -> Searc
         explicit_filters or wildcard_keys
     ):
         return SearchQuery(task_id=int(non_filter_tokens[0]))
+
+    # Multiple IDs and/or ID ranges (e.g. `6619 7190 7338..7342`) → open them all.
+    if non_filter_tokens and not explicit_filters and not wildcard_keys and not empty_keys:
+        id_list = _expand_id_tokens(non_filter_tokens)
+        if id_list is not None:
+            return SearchQuery(task_ids=id_list)
 
     filters = _merge_with_defaults(explicit_filters, wildcard_keys | empty_keys, defaults)
     default_filter_keys = set(filters) - set(explicit_filters)

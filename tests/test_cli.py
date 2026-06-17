@@ -139,6 +139,43 @@ class TestRunEndToEnd:
         assert 'OP#1234' in buf.getvalue()
         assert 'Direkt geladen' in buf.getvalue()
 
+    async def test_multiple_ids_and_range_print_all(
+        self, monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
+    ) -> None:
+        monkeypatch.setenv('OP_API_KEY', 'test')
+        config = Config(
+            connection=ConnectionConfig(base_url=BASE_URL),
+            defaults=DefaultsConfig(),
+            remote=RemoteConfig(),
+        )
+
+        def _wp(wid: int) -> dict:
+            return {
+                '_type': 'WorkPackage', 'id': wid, 'subject': f'Task {wid}',
+                'lockVersion': 1,
+                '_links': {
+                    'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                    'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
+                    'project': {'href': '/api/v3/projects/10', 'title': 'Web'},
+                },
+            }
+
+        respx_mock.get(f'{BASE_URL}/api/v3/work_packages').mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    '_type': 'Collection', 'total': 3, 'count': 3,
+                    '_embedded': {'elements': [_wp(6619), _wp(7338), _wp(7339)]},
+                },
+            )
+        )
+        args = _parse_args(['6619', '7338..7339'])
+        buf, console = _buffered_console()
+        rc = await run(args, config=config, config_path=None, console=console)
+        assert rc == 0
+        out = buf.getvalue()
+        assert 'OP#6619' in out and 'OP#7338' in out and 'OP#7339' in out
+
     async def test_interactive_mode_passes_client_to_opapp(
         self, monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
     ) -> None:

@@ -34,6 +34,48 @@ class TestIdLookup:
         # Filters are ignored for id lookup (caller decides to honour them or not).
 
 
+class TestMultiIdLookup:
+    def test_multiple_ids(self) -> None:
+        q = parse(['6619', '7190'])
+        assert q.task_id is None
+        assert q.task_ids == [6619, 7190]
+
+    def test_single_range(self) -> None:
+        q = parse(['7338..7342'])
+        assert q.task_ids == [7338, 7339, 7340, 7341, 7342]
+
+    def test_ids_and_range_mixed(self) -> None:
+        q = parse(['6619', '7190', '7338..7342'])
+        assert q.task_ids == [6619, 7190, 7338, 7339, 7340, 7341, 7342]
+
+    def test_dedup_preserves_first_seen_order(self) -> None:
+        q = parse(['10', '10', '9..11'])
+        assert q.task_ids == [10, 9, 11]
+
+    def test_id_with_word_is_word_search_not_ids(self) -> None:
+        q = parse(['1234', 'foo'])
+        assert q.task_ids == []
+        assert q.words == ['1234', 'foo']
+
+    def test_ids_with_filter_are_not_multi_id(self) -> None:
+        # A filter present → treat numbers as a word search, not a multi-id open.
+        q = parse(['6619', '7190', 'type=bug'])
+        assert q.task_ids == []
+
+    def test_single_number_stays_task_id(self) -> None:
+        q = parse(['1234'])
+        assert q.task_id == 1234
+        assert q.task_ids == []
+
+    def test_inverted_range_raises(self) -> None:
+        with pytest.raises(ValueError, match='start is greater than end'):
+            parse(['7342..7338'])
+
+    def test_oversized_range_raises(self) -> None:
+        with pytest.raises(ValueError, match='spans more than'):
+            parse(['1..100000'])
+
+
 class TestWordSearch:
     def test_multiple_words(self) -> None:
         q = parse(['deployment', 'pipeline', 'bug'])

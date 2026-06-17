@@ -109,7 +109,11 @@ async def run(
             console.print('[green]Remote data loaded.[/green]')
             return 0
 
-        query = parse(args.query, defaults=config.defaults)
+        try:
+            query = parse(args.query, defaults=config.defaults)
+        except ValueError as exc:
+            console.print(f'[red]Invalid query:[/red] {exc}')
+            return 2
         if args.interactive:
             initial_tasks = await _initial_tasks(client, query, config)
             log.info(
@@ -138,6 +142,17 @@ async def run(
             console.print(format_task_detail(wp, config.connection.base_url))
             return 0
 
+        if query.task_ids:
+            results = await client.get_work_packages_by_ids(query.task_ids)
+            for wp in results:
+                console.print(format_result_line(wp, config.connection.base_url))
+            missing = [i for i in query.task_ids if i not in {wp.id for wp in results}]
+            if missing:
+                Console(stderr=True).print(
+                    f'[yellow]Nicht gefunden:[/yellow] {", ".join(f"#{i}" for i in missing)}'
+                )
+            return 0
+
         try:
             filter_variants = build_api_filter_variants(query, config.remote)
         except ValueError as exc:
@@ -155,6 +170,8 @@ async def _initial_tasks(
     if query.task_id is not None:
         wp = await client.get_work_package(query.task_id)
         return [wp] if wp else []
+    if query.task_ids:
+        return await client.get_work_packages_by_ids(query.task_ids)
     if not query.words and not query.filters and not query.empty_filters:
         return []
     filter_variants = build_api_filter_variants(query, config.remote)

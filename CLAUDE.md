@@ -51,7 +51,7 @@ queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-app
 
 ### Wichtige Klassen
 
-**`SearchQuery`** (`search.py`): Parst `op type=Bug,Feature status=open #123 Suchbegriff` in strukturierte Filter. `_FILTER_KEY_MAP` übersetzt Filter-Keys zu API-Feldern und Remote-Caches. Substring-Fuzzy-Match mit Ambiguity-Detection.
+**`SearchQuery`** (`search.py`): Parst `op type=Bug,Feature status=open #123 Suchbegriff` in strukturierte Filter. `_FILTER_KEY_MAP` übersetzt Filter-Keys zu API-Feldern und Remote-Caches. Substring-Fuzzy-Match mit Ambiguity-Detection. Eine einzelne Zahl → `task_id` (Detail/Einzel-Task); mehrere Zahlen und/oder Ranges (`6619 7190 7338..7342`, ohne Filter/Worte) → `task_ids` (per `get_work_packages_by_ids` in Eingabereihenfolge geladen). Pipe im Wort (`sapv|pallinet`) → ODER-Varianten.
 
 **`Config`** (`config.py`): Hält `connection`, `defaults`, `remote`, `logging`, `filter`. `remote.*` wird von `--load-remote-data` befüllt und ist Voraussetzung für Filter-Auflösung. `tomlkit` wird verwendet, um Kommentare im TOML zu erhalten.
 
