@@ -68,6 +68,61 @@ class TestMemberships:
         assert sent == [{'project': {'operator': '=', 'values': ['106']}}]
         assert [(m.principal_type, m.principal_id) for m in ms] == [('group', 6), ('user', 33)]
 
+    async def test_get_principal_memberships_filters_by_principal(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        route = respx_mock.get(f'{BASE_URL}/api/v3/memberships').mock(
+            return_value=httpx.Response(200, json=_collection([
+                _membership(1, '/api/v3/groups/6', 'KB', [3]),
+            ]))
+        )
+        async with client:
+            ms = await client.get_principal_memberships(6)
+        sent = json.loads(route.calls.last.request.url.params['filters'])
+        assert sent == [{'principal': {'operator': '=', 'values': ['6']}}]
+        assert ms[0].principal_id == 6
+
+    async def test_set_group_members_patches_full_list(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        route = respx_mock.patch(f'{BASE_URL}/api/v3/groups/6').mock(
+            return_value=httpx.Response(200, json={
+                '_type': 'Group', 'id': 6, 'name': 'KB',
+                '_links': {'members': [
+                    {'href': '/api/v3/users/33'}, {'href': '/api/v3/users/99'},
+                ]},
+            })
+        )
+        async with client:
+            g = await client.set_group_members(6, [33, 99])
+        body = json.loads(route.calls.last.request.content)
+        assert body == {'_links': {'members': [
+            {'href': '/api/v3/users/33'}, {'href': '/api/v3/users/99'},
+        ]}}
+        assert g.member_ids == [33, 99]
+
+    async def test_create_user_sends_fields(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        route = respx_mock.post(f'{BASE_URL}/api/v3/users').mock(
+            return_value=httpx.Response(201, json={
+                '_type': 'User', 'id': 200, 'name': 'Neu Person',
+                'login': 'neu@dvs.ag', 'email': 'neu@dvs.ag',
+                'firstName': 'Neu', 'lastName': 'Person', 'status': 'invited',
+            })
+        )
+        async with client:
+            u = await client.create_user(
+                login='neu@dvs.ag', email='neu@dvs.ag',
+                first_name='Neu', last_name='Person', status='invited',
+            )
+        body = json.loads(route.calls.last.request.content)
+        assert body == {
+            'login': 'neu@dvs.ag', 'email': 'neu@dvs.ag',
+            'firstName': 'Neu', 'lastName': 'Person', 'status': 'invited',
+        }
+        assert u.id == 200 and u.status == 'invited'
+
     async def test_get_group_members(
         self, client: OpenProjectClient, respx_mock: respx.MockRouter
     ) -> None:

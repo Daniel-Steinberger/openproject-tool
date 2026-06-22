@@ -71,6 +71,9 @@ class User(_ApiModel):
     name: str
     login: str | None = None
     email: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    status: str | None = None
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> User:
@@ -79,6 +82,9 @@ class User(_ApiModel):
             name=payload['name'],
             login=payload.get('login'),
             email=payload.get('email'),
+            first_name=payload.get('firstName'),
+            last_name=payload.get('lastName'),
+            status=payload.get('status'),
         )
 
 

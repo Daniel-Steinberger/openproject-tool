@@ -8,6 +8,17 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, Footer, Header, Label
 
 from op.perms import build_hierarchy, has_mismatch, plan_propagation, plan_transfer
+from op.perms_queue import AddProjectMembership
+
+
+def _to_actions(plans) -> list[AddProjectMembership]:  # noqa: ANN001
+    return [
+        AddProjectMembership(
+            project_id=p.project_id, kind=p.kind,
+            principal_id=p.principal_id, role_ids=set(p.role_ids),
+        )
+        for p in plans
+    ]
 
 _COL_FLAG = 'flag'
 _COL_ID = 'id'
@@ -22,6 +33,7 @@ class PermsProjectsScreen(Screen[None]):
     from its parent's (additive view)."""
 
     BINDINGS = [
+        Binding('v', 'to_groups', 'Gruppensicht', show=True),
         Binding('c', 'copy', 'Von Projekt übertragen', show=True),
         Binding('f', 'fix', 'Hierarchie angleichen', show=True),
         Binding('g', 'review', 'Review/Apply', show=True),
@@ -105,7 +117,7 @@ class PermsProjectsScreen(Screen[None]):
         if not plans:
             self.notify('Teilbaum ist bereits konsistent.', timeout=4)
             return
-        self.app.perms_queue.add_many(plans)
+        self.app.perms_queue.add_many(_to_actions(plans))
         self._update_subtitle()
         self.notify(
             f'{len(plans)} Angleichung(en) eingeplant für den Teilbaum von '
@@ -127,7 +139,7 @@ class PermsProjectsScreen(Screen[None]):
             if not plans:
                 self.notify('Ziel hat bereits alle Quell-Berechtigungen.', timeout=4)
                 return
-            self.app.perms_queue.add_many(plans)
+            self.app.perms_queue.add_many(_to_actions(plans))
             self._update_subtitle()
             self.notify(
                 f'{len(plans)} Übertragung(en) von {self.app.projects.get(src, src)} '
@@ -138,6 +150,11 @@ class PermsProjectsScreen(Screen[None]):
         self.app.push_screen(
             PermsProjectPickerScreen(self._rows, title='Quell-Projekt wählen'), _on_pick
         )
+
+    def action_to_groups(self) -> None:
+        from op.tui.perms_groups_screen import PermsGroupsScreen
+
+        self.app.push_screen(PermsGroupsScreen())
 
     def action_review(self) -> None:
         if self.app.perms_queue.count == 0:

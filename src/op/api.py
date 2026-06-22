@@ -99,10 +99,9 @@ class OpenProjectClient:
 
     # --- memberships ------------------------------------------------------
 
-    async def get_memberships(self, project_id: int) -> list[Membership]:
-        """All project memberships for one project (users AND groups, incl. the
-        per-user entries OpenProject materialises from group memberships)."""
-        filters = [{'project': {'operator': '=', 'values': [str(project_id)]}}]
+    async def _get_memberships_filtered(
+        self, filters: list[dict[str, T.Any]]
+    ) -> list[Membership]:
         params = {'filters': json.dumps(filters), 'pageSize': str(_DEFAULT_PAGE_SIZE)}
         data = await self._request('GET', '/memberships', params=params)
         elements = list(data['_embedded']['elements'])
@@ -121,10 +120,51 @@ class OpenProjectClient:
                 elements.extend(d['_embedded']['elements'])
         return [Membership.from_api(e) for e in elements]
 
+    async def get_memberships(self, project_id: int) -> list[Membership]:
+        """All project memberships for one project (users AND groups, incl. the
+        per-user entries OpenProject materialises from group memberships)."""
+        return await self._get_memberships_filtered(
+            [{'project': {'operator': '=', 'values': [str(project_id)]}}]
+        )
+
+    async def get_principal_memberships(self, principal_id: int) -> list[Membership]:
+        """All memberships of one principal (user or group) across projects."""
+        return await self._get_memberships_filtered(
+            [{'principal': {'operator': '=', 'values': [str(principal_id)]}}]
+        )
+
     async def get_group_members(self, group_id: int) -> list[int]:
         """Return the user ids belonging to a group (from the group's _links.members)."""
         data = await self._request('GET', f'/groups/{group_id}')
         return Group.from_api(data).member_ids
+
+    async def set_group_members(self, group_id: int, user_ids: list[int]) -> Group:
+        """Replace a group's member list (PATCH expects the full set of members)."""
+        body = {'_links': {'members': [
+            {'href': f'/api/v3/users/{uid}'} for uid in user_ids
+        ]}}
+        data = await self._request('PATCH', f'/groups/{group_id}', json=body)
+        return Group.from_api(data)
+
+    async def create_user(
+        self,
+        *,
+        login: str,
+        email: str,
+        first_name: str,
+        last_name: str,
+        status: str = 'invited',
+    ) -> User:
+        """Create a user (requires admin). status: 'invited' (sends email) or 'active'."""
+        body = {
+            'login': login,
+            'email': email,
+            'firstName': first_name,
+            'lastName': last_name,
+            'status': status,
+        }
+        data = await self._request('POST', '/users', json=body)
+        return User.from_api(data)
 
     async def create_membership(
         self,
