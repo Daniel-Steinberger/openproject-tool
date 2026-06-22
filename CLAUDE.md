@@ -82,6 +82,7 @@ queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-app
 
 ## Entwicklungskonventionen
 
+- **Plan → GitHub-Issue**: Für jeden neuen Plan wird bei dessen Umsetzung automatisch ein GitHub-Issue via `gh issue create` angelegt, das das Vorhaben genauer erklärt und präzisiert (Ziel, Kontext, Umsetzungsschritte), sodass es nachvollziehbar ist. Die Issue-Nummer wird vom Tool vergeben und dem User genannt. Commits und PRs referenzieren dieses Issue (`#<nr>`), damit sich Änderungen später darauf zurückführen lassen.
 - **Red-Green-Zyklus**: Commits sind oft als "Phase X Red" (Tests zuerst) + "Phase X Green" (Implementierung) strukturiert.
 - **Async-First**: Alle API-Calls und TUI-Aktionen sind `async/await`. Tests mit `pytest-asyncio`.
 - **Config als Single Source of Truth**: `remote.*`-Daten kommen ausschließlich aus der Config (nach `--load-remote-data`), nicht aus Runtime-API-Calls in der TUI.
