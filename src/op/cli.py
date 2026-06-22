@@ -39,10 +39,22 @@ def main() -> None:
 
 
 def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> argparse.Namespace:
+    # `op perms [projekt]` is a distinct mode (own TUI), kept separate from the
+    # work-package query parser so the positional `query` semantics are unchanged.
+    if argv and argv[0] == 'perms':
+        perms = argparse.ArgumentParser(prog='op perms')
+        perms.add_argument('project', nargs='?', help='Projekt-ID, -Name oder -Identifier')
+        ns = perms.parse_args(argv[1:])
+        return argparse.Namespace(
+            command='perms', perms_project=ns.project,
+            load_remote_data=False, interactive=False, query=[],
+        )
+
     parser = argparse.ArgumentParser(
         prog='op',
         description='Fast, keyboard-driven CLI and TUI for OpenProject.',
     )
+    parser.set_defaults(command=None)
     parser.add_argument(
         '--load-remote-data',
         action='store_true',
@@ -109,6 +121,9 @@ async def run(
             console.print('[green]Remote data loaded.[/green]')
             return 0
 
+        if getattr(args, 'command', None) == 'perms':
+            return await _run_perms(args, client, config, console)
+
         try:
             query = parse(args.query, defaults=config.defaults)
         except ValueError as exc:
@@ -162,6 +177,42 @@ async def run(
         for wp in results:
             console.print(format_result_line(wp, config.connection.base_url))
         return 0
+
+
+async def _run_perms(
+    args: argparse.Namespace,
+    client: OpenProjectClient,
+    config: Config,
+    console: Console,
+) -> int:
+    """Launch the interactive permission tool (`op perms [projekt]`)."""
+    if not config.remote.projects:
+        console.print(
+            '[red]Keine Projekt-Metadaten.[/red] Bitte zuerst `op --load-remote-data` ausführen.'
+        )
+        return 2
+    start = _resolve_project(args.perms_project, config) if args.perms_project else None
+    if args.perms_project and start is None:
+        console.print(f'[red]Projekt nicht gefunden:[/red] {args.perms_project!r}')
+        return 2
+    from op.tui.perms_app import PermsApp
+
+    app = PermsApp(config=config, client=client, start_project=start)
+    await app.run_async()
+    return 0
+
+
+def _resolve_project(token: str, config: Config) -> int | None:
+    """Resolve a project token (numeric id, exact name or case-insensitive substring)."""
+    projects = config.remote.projects
+    if token.isdigit() and int(token) in projects:
+        return int(token)
+    needle = token.casefold()
+    exact = [pid for pid, name in projects.items() if name.casefold() == needle]
+    if exact:
+        return exact[0]
+    subs = [pid for pid, name in projects.items() if needle in name.casefold()]
+    return subs[0] if len(subs) == 1 else (subs[0] if subs else None)
 
 
 async def _initial_tasks(
