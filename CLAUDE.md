@@ -35,10 +35,17 @@ search.py       → Query-Parsing: ID / Worte / key=value Filter → OpenProject
 tui/app.py      → Textual Root-App, AppState-Enum (SELECTOR/DETAIL/REVIEW/APPLYING)
 tui/*.py        → Textual Screens und Modals (Screen-Stack)
 api.py          → httpx Async-Client für OpenProject v3 REST API
-models.py       → Pydantic-Modelle, HAL-JSON-Parsing (WorkPackage, User, Status, …)
+models.py       → Pydantic-Modelle, HAL-JSON-Parsing (WorkPackage, User, Status, Role, Membership, …)
 config.py       → TOML-Config (XDG: ~/.config/openproject-tool/config.toml), tomlkit
 queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-applyen
+perms.py        → Reine Berechtigungslogik (Source-Set-Rekonstruktion, Hierarchie, Diff/Propagation)
+perms_queue.py  → PermissionQueue: geplante additive Mitgliedschaften sammeln
+tui/perms_*.py  → `op perms`-Modus (eigene PermsApp: Projektbaum, Detail, Review, Applying)
 ```
+
+### `op perms` — Berechtigungs-Tool
+
+Eigener Modus (`op perms [projekt]`) mit eigener `PermsApp` (kein Task-State). Zeigt Projekt-Berechtigungen **gruppen-/benutzer-zentriert**: Da die v3-API keinen `inherited_from`-Marker hat, wird das **Source-Set** mengenbasiert rekonstruiert (Gruppen + Direkt-User; via Gruppe sichtbare User werden unter der Gruppe eingeklappt, siehe `perms.build_source_set`). Mitgliedschaften werden **live** geladen (nicht aus dem `[remote.*]`-Cache). Funktionen: `f` gleicht den **gesamten Teilbaum** eines Oberprojekts an (`plan_propagation`), `c` überträgt Berechtigungen von einem anderen Projekt (`plan_transfer`) — beides **additiv** (nie entfernen). Geplante Änderungen werden gesammelt (`PermissionQueue`), per `g` reviewed und angewendet (`create_membership`/`update_membership_roles`).
 
 ### Datenfluss
 
@@ -75,6 +82,9 @@ queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-app
 | ProjectFilterScreen | `tui/project_filter_screen.py` | Hierarchie-aware, persistiert in Config |
 | ReviewScreen | `tui/review_screen.py` | Batch-Review vor Apply |
 | ApplyingScreen | `tui/applying_screen.py` | Batch-PATCH-Ausführung |
+| PermsProjectsScreen | `tui/perms_projects_screen.py` | `op perms`-Root: Projektbaum mit Mismatch-Flag (`▲`); Enter Detail, `c` Übertragen, `f` Teilbaum angleichen, `g` Review, `r` Neu laden, `q` Quit |
+| PermsDetailScreen | `tui/perms_detail_screen.py` | Gruppen (mit eingeklappten Mitgliedern) + Direkt-User eines Projekts |
+| PermsReviewScreen / PermsApplyingScreen | `tui/perms_review_screen.py`, `tui/perms_applying_screen.py` | Review (`d` entfernen, `g` anwenden) + Batch-Ausführung der Mitgliedschaften |
 
 ### Date-Shortcuts (UpdateModal)
 

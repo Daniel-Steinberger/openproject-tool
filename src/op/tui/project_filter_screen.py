@@ -19,42 +19,13 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header
 
 from op.config import Config, update_filter
+from op.perms import build_hierarchy as _build_hierarchy
 
 log = logging.getLogger(__name__)
 
 _COL_CHECK = 'check'
 _COL_ID = 'id'
 _COL_NAME = 'name'
-
-
-def _build_hierarchy(
-    projects: dict[int, str], parents: dict[int, int]
-) -> list[tuple[int, int, str]]:
-    """Return [(project_id, depth, name)] in parent-before-child order."""
-    children: dict[int | None, list[int]] = {}
-    for pid in projects:
-        parent = parents.get(pid)
-        children.setdefault(parent, []).append(pid)
-    # Stable order by project name
-    for group in children.values():
-        group.sort(key=lambda pid: projects[pid].lower())
-
-    result: list[tuple[int, int, str]] = []
-
-    def _walk(parent: int | None, depth: int) -> None:
-        for pid in children.get(parent, []):
-            result.append((pid, depth, projects[pid]))
-            _walk(pid, depth + 1)
-
-    # Roots: parents that don't exist in projects, plus explicit None
-    all_parent_keys = set(children.keys())
-    roots: set[int | None] = {None}
-    for parent in all_parent_keys:
-        if parent is None or parent not in projects:
-            roots.add(parent)
-    for root in sorted(roots, key=lambda k: (k is None, k or 0)):
-        _walk(root, 0)
-    return result
 
 
 class ProjectFilterScreen(Screen[None]):

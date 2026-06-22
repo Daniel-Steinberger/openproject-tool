@@ -8,8 +8,10 @@ from op.models import (
     Activity,
     CustomField,
     Group,
+    Membership,
     Priority,
     Project,
+    Role,
     Status,
     User,
     WorkPackage,
@@ -65,6 +67,58 @@ class TestSimpleLookups:
     def test_group_from_api(self) -> None:
         payload = {'_type': 'Group', 'id': 12, 'name': 'DevOps-Team'}
         assert Group.from_api(payload) == Group(id=12, name='DevOps-Team')
+
+    def test_group_from_api_parses_members(self) -> None:
+        payload = {
+            '_type': 'Group', 'id': 6, 'name': 'KB',
+            '_links': {
+                'members': [
+                    {'href': '/api/v3/users/33', 'title': 'Grit Keiwel'},
+                    {'href': '/api/v3/users/34', 'title': 'Christian Düster'},
+                ],
+            },
+        }
+        g = Group.from_api(payload)
+        assert g.member_ids == [33, 34]
+
+    def test_role_from_api(self) -> None:
+        r = Role.from_api({'_type': 'Role', 'id': 3, 'name': 'Member'})
+        assert r == Role(id=3, name='Member')
+
+    def test_membership_from_api_user(self) -> None:
+        payload = {
+            '_type': 'Membership', 'id': 2879,
+            '_links': {
+                'project': {'href': '/api/v3/projects/106', 'title': 'StBVS'},
+                'principal': {'href': '/api/v3/users/33', 'title': 'Grit Keiwel gke'},
+                'roles': [{'href': '/api/v3/roles/3', 'title': 'Member'}],
+            },
+        }
+        m = Membership.from_api(payload)
+        assert m.id == 2879
+        assert m.project_id == 106
+        assert m.principal_id == 33
+        assert m.principal_type == 'user'
+        assert m.principal_name == 'Grit Keiwel gke'
+        assert m.role_ids == [3]
+        assert m.role_names == ['Member']
+
+    def test_membership_from_api_group(self) -> None:
+        payload = {
+            '_type': 'Membership', 'id': 2877,
+            '_links': {
+                'project': {'href': '/api/v3/projects/106'},
+                'principal': {'href': '/api/v3/groups/6', 'title': 'KB'},
+                'roles': [
+                    {'href': '/api/v3/roles/3', 'title': 'Member'},
+                    {'href': '/api/v3/roles/5', 'title': 'Project admin'},
+                ],
+            },
+        }
+        m = Membership.from_api(payload)
+        assert m.principal_type == 'group'
+        assert m.principal_id == 6
+        assert m.role_ids == [3, 5]
 
 
 class TestWorkPackage:

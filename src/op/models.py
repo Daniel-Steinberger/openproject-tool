@@ -85,10 +85,60 @@ class User(_ApiModel):
 class Group(_ApiModel):
     id: int
     name: str
+    member_ids: list[int] = Field(default_factory=list)
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> Group:
+        links = payload.get('_links') or {}
+        members = links.get('members') or []
+        member_ids = [
+            id_from_href(m.get('href'))
+            for m in members
+            if isinstance(m, dict)
+        ]
+        return cls(
+            id=payload['id'],
+            name=payload['name'],
+            member_ids=[m for m in member_ids if m is not None],
+        )
+
+
+class Role(_ApiModel):
+    id: int
+    name: str
+
+    @classmethod
+    def from_api(cls, payload: dict[str, T.Any]) -> Role:
         return cls(id=payload['id'], name=payload['name'])
+
+
+class Membership(_ApiModel):
+    """A project membership: which principal (user or group) holds which roles."""
+
+    id: int
+    project_id: int | None = None
+    principal_id: int | None = None
+    principal_name: str | None = None
+    principal_type: str = 'user'  # 'user' | 'group'
+    role_ids: list[int] = Field(default_factory=list)
+    role_names: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_api(cls, payload: dict[str, T.Any]) -> Membership:
+        links = payload.get('_links') or {}
+        principal = links.get('principal') or {}
+        href = principal.get('href') or ''
+        principal_type = 'group' if '/groups/' in href else 'user'
+        roles = [r for r in links.get('roles', []) if isinstance(r, dict)]
+        return cls(
+            id=payload['id'],
+            project_id=_link_id(links, 'project'),
+            principal_id=id_from_href(href),
+            principal_name=principal.get('title'),
+            principal_type=principal_type,
+            role_ids=[rid for rid in (id_from_href(r.get('href')) for r in roles) if rid is not None],
+            role_names=[r.get('title') for r in roles if r.get('title')],
+        )
 
 
 class Activity(_ApiModel):
