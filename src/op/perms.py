@@ -14,9 +14,13 @@ direct users); the target project re-materialises its own per-user entries.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 
 from op.models import Membership
+
+# A footprint element: ('group', group_id) or ('project', project_id).
+FootprintElement = tuple[str, int]
 
 
 def build_hierarchy(
@@ -191,3 +195,74 @@ def plan_propagation(
         # child now effectively has parent's entries too (for deeper levels)
         effective[child] = child_set | parent_set
     return plans
+
+
+# --- group-member footprint analysis ---------------------------------------
+
+
+def user_groups(all_group_members: dict[int, list[int]]) -> dict[int, set[int]]:
+    """Invert group→members into user→{group_ids}."""
+    out: dict[int, set[int]] = {}
+    for gid, uids in all_group_members.items():
+        for uid in uids:
+            out.setdefault(uid, set()).add(gid)
+    return out
+
+
+def user_direct_projects(
+    memberships_by_project: dict[int, list[Membership]],
+    all_group_members: dict[int, list[int]],
+) -> dict[int, set[int]]:
+    """user→{project_ids} where the user is a *direct* member (not via a group)."""
+    out: dict[int, set[int]] = {}
+    for pid, ms in memberships_by_project.items():
+        covered: set[int] = set()
+        for m in ms:
+            if m.principal_type == 'group' and m.principal_id is not None:
+                covered.update(all_group_members.get(m.principal_id, []))
+        for m in ms:
+            if (
+                m.principal_type == 'user'
+                and m.principal_id is not None
+                and m.principal_id not in covered
+            ):
+                out.setdefault(m.principal_id, set()).add(pid)
+    return out
+
+
+def build_footprints(
+    member_ids: list[int],
+    all_group_members: dict[int, list[int]],
+    direct_projects_by_user: dict[int, set[int]],
+) -> dict[int, set[FootprintElement]]:
+    """Per member: the set of footprint elements (other groups + direct projects)."""
+    ug = user_groups(all_group_members)
+    out: dict[int, set[FootprintElement]] = {}
+    for uid in member_ids:
+        fp: set[FootprintElement] = {('group', g) for g in ug.get(uid, set())}
+        fp |= {('project', p) for p in direct_projects_by_user.get(uid, set())}
+        out[uid] = fp
+    return out
+
+
+def majority_footprint(
+    footprints: dict[int, set[FootprintElement]]
+) -> set[FootprintElement]:
+    """Footprint elements shared by strictly more than half of the members.
+
+    Returns an empty set for groups with fewer than 3 members (no meaningful
+    'normal' to deviate from)."""
+    n = len(footprints)
+    if n < 3:
+        return set()
+    counts: Counter[FootprintElement] = Counter()
+    for fp in footprints.values():
+        counts.update(fp)
+    return {el for el, cnt in counts.items() if cnt * 2 > n}
+
+
+def footprint_deviation(
+    member_fp: set[FootprintElement], majority_fp: set[FootprintElement]
+) -> set[FootprintElement]:
+    """What the majority has that this member lacks (the additive 'heal' target)."""
+    return majority_fp - member_fp

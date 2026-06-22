@@ -3,13 +3,18 @@ from __future__ import annotations
 from op.models import Membership
 from op.perms import (
     SourceEntry,
+    build_footprints,
     build_hierarchy,
     build_source_set,
     descendants,
+    footprint_deviation,
     has_mismatch,
+    majority_footprint,
     missing_entries,
     plan_propagation,
     plan_transfer,
+    user_direct_projects,
+    user_groups,
     visible_members,
 )
 
@@ -99,3 +104,40 @@ class TestHierarchy:
         kb = SourceEntry('group', 6, frozenset({3}))
         source_sets = {1: {kb}, 2: {kb}}
         assert plan_propagation(1, parents, source_sets) == []
+
+
+def _um(uid: int, project: int, kind: str = 'user', roles: list[int] | None = None) -> Membership:
+    return Membership(
+        id=uid * 1000 + project, project_id=project, principal_id=uid,
+        principal_name=f'u{uid}', principal_type=kind, role_ids=roles or [3],
+    )
+
+
+class TestFootprint:
+    def test_user_groups_inverts(self) -> None:
+        assert user_groups({6: [33, 34], 7: [34]}) == {33: {6}, 34: {6, 7}}
+
+    def test_user_direct_projects_excludes_group_covered(self) -> None:
+        # Project 1: group 6 (members 33,34) + direct user 19. 33 is covered → not direct.
+        by_project = {
+            1: [_um(6, 1, 'group'), _um(33, 1), _um(19, 1)],
+        }
+        direct = user_direct_projects(by_project, {6: [33, 34]})
+        assert direct == {19: {1}}
+
+    def test_majority_and_deviation(self) -> None:
+        # 3 members; majority (>1.5 → ≥2) is in group 6 and project 1.
+        # member 33,34 are in group 6 + direct project 1; member 99 only in group 6.
+        all_group_members = {6: [33, 34, 99]}
+        direct = {33: {1}, 34: {1}}  # 99 lacks project 1
+        fps = build_footprints([33, 34, 99], all_group_members, direct)
+        maj = majority_footprint(fps)
+        assert ('group', 6) in maj
+        assert ('project', 1) in maj  # 2 of 3 → majority
+        # 99 deviates: lacks ('project', 1)
+        assert footprint_deviation(fps[99], maj) == {('project', 1)}
+        assert footprint_deviation(fps[33], maj) == set()
+
+    def test_no_majority_below_three_members(self) -> None:
+        fps = build_footprints([33, 34], {6: [33, 34]}, {33: {1}})
+        assert majority_footprint(fps) == set()

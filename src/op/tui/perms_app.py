@@ -15,7 +15,7 @@ from textual.app import App
 
 from op.config import Config
 from op.models import Membership
-from op.perms import SourceEntry, build_source_set
+from op.perms import SourceEntry, build_source_set, user_direct_projects
 from op.perms_queue import PermissionQueue
 
 
@@ -56,6 +56,7 @@ class PermsApp(App[None]):
         self.memberships: dict[int, list[Membership]] = {}
         self.group_members: dict[int, list[int]] = {}
         self.source_sets: dict[int, set[SourceEntry]] = {}
+        self.direct_projects: dict[int, set[int]] = {}
         self.loaded = False
 
     def on_mount(self) -> None:
@@ -79,12 +80,9 @@ class PermsApp(App[None]):
         for pid, res in zip(project_ids, results):
             self.memberships[pid] = [] if isinstance(res, Exception) else res
 
-        group_ids = {
-            m.principal_id
-            for ms in self.memberships.values()
-            for m in ms
-            if m.principal_type == 'group' and m.principal_id is not None
-        }
+        # Load member lists for ALL known groups (not only project-referenced ones)
+        # so the group view and the member-footprint comparison are complete.
+        group_ids = list(self.config.remote.groups)
         gm = await asyncio.gather(
             *(self.client.get_group_members(gid) for gid in group_ids),
             return_exceptions=True,
@@ -96,7 +94,22 @@ class PermsApp(App[None]):
             pid: build_source_set(ms, self.group_members)
             for pid, ms in self.memberships.items()
         }
+        self.direct_projects = user_direct_projects(self.memberships, self.group_members)
         self.loaded = True
+
+    def group_projects(self, group_id: int) -> list[int]:
+        """Project ids where the group is a direct member."""
+        return [
+            pid for pid, ms in self.memberships.items()
+            if any(m.principal_type == 'group' and m.principal_id == group_id for m in ms)
+        ]
+
+    def member_role_id(self) -> int | None:
+        """Role id of the 'Member' role (fallback: lowest id)."""
+        for rid, name in self.roles.items():
+            if name.casefold() == 'member':
+                return rid
+        return min(self.roles, default=None)
 
     def source_set(self, project_id: int) -> set[SourceEntry]:
         return self.source_sets.get(project_id, set())

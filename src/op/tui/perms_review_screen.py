@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from rich.text import Text
 from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header
@@ -22,30 +21,18 @@ class PermsReviewScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.app.sub_title = 'Review geplanter Berechtigungen'
+        self.app.sub_title = 'Review geplanter Änderungen'
         table = self.query_one('#perms-review', DataTable)
-        table.add_column('Projekt')
-        table.add_column('Principal')
-        table.add_column('Rollen', width=24)
+        table.add_column('Geplante Änderung')
         self._populate()
 
     def _populate(self) -> None:
         table = self.query_one('#perms-review', DataTable)
         table.clear()
-        for op in self.app.perms_queue.all():
-            table.add_row(
-                self.app.projects.get(op.project_id, str(op.project_id)),
-                self._principal_label(op),
-                self.app.role_label(sorted(op.role_ids)),
-                key=f'{op.project_id}:{op.kind}:{op.principal_id}',
-            )
+        for i, op in enumerate(self.app.perms_queue.all()):
+            table.add_row(op.describe(self.app), key=str(i))
         if self.app.perms_queue.count == 0:
             self.app.pop_screen()
-
-    def _principal_label(self, op) -> Text:  # noqa: ANN001
-        label = self.app.principal_label(op.kind, op.principal_id)
-        prefix = '▸ ' if op.kind == 'group' else ''
-        return Text(f'{prefix}{label}', style='bold' if op.kind == 'group' else '')
 
     def action_delete(self) -> None:
         table = self.query_one('#perms-review', DataTable)
@@ -54,8 +41,7 @@ class PermsReviewScreen(Screen[None]):
         ops = self.app.perms_queue.all()
         if table.cursor_row >= len(ops):
             return
-        op = ops[table.cursor_row]
-        self.app.perms_queue.remove(op.key)
+        self.app.perms_queue.remove(ops[table.cursor_row].key)
         self._populate()
 
     def action_apply(self) -> None:

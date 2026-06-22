@@ -39,13 +39,15 @@ models.py       → Pydantic-Modelle, HAL-JSON-Parsing (WorkPackage, User, Statu
 config.py       → TOML-Config (XDG: ~/.config/openproject-tool/config.toml), tomlkit
 queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-applyen
 perms.py        → Reine Berechtigungslogik (Source-Set-Rekonstruktion, Hierarchie, Diff/Propagation)
-perms_queue.py  → PermissionQueue: geplante additive Mitgliedschaften sammeln
-tui/perms_*.py  → `op perms`-Modus (eigene PermsApp: Projektbaum, Detail, Review, Applying)
+perms_queue.py  → PermissionQueue: polymorphe additive PermActions sammeln
+tui/perms_*.py  → `op perms`-Modus (eigene PermsApp: Projektbaum/Gruppen/Detail/Review/Applying)
 ```
 
 ### `op perms` — Berechtigungs-Tool
 
-Eigener Modus (`op perms [projekt]`) mit eigener `PermsApp` (kein Task-State). Zeigt Projekt-Berechtigungen **gruppen-/benutzer-zentriert**: Da die v3-API keinen `inherited_from`-Marker hat, wird das **Source-Set** mengenbasiert rekonstruiert (Gruppen + Direkt-User; via Gruppe sichtbare User werden unter der Gruppe eingeklappt, siehe `perms.build_source_set`). Mitgliedschaften werden **live** geladen (nicht aus dem `[remote.*]`-Cache). Funktionen: `f` gleicht den **gesamten Teilbaum** eines Oberprojekts an (`plan_propagation`), `c` überträgt Berechtigungen von einem anderen Projekt (`plan_transfer`) — beides **additiv** (nie entfernen). Geplante Änderungen werden gesammelt (`PermissionQueue`), per `g` reviewed und angewendet (`create_membership`/`update_membership_roles`).
+Eigener Modus (`op perms [projekt]`) mit eigener `PermsApp` (kein Task-State). Zeigt Berechtigungen **gruppen-/benutzer-zentriert**: Da die v3-API keinen `inherited_from`-Marker hat, wird das **Source-Set** mengenbasiert rekonstruiert (Gruppen + Direkt-User; via Gruppe sichtbare User werden unter der Gruppe eingeklappt, siehe `perms.build_source_set`). Daten werden **live** geladen (nicht aus dem `[remote.*]`-Cache), inkl. aller Gruppen-Mitgliederlisten.
+
+Zwei Wurzelsichten, umschaltbar mit `v`: **Projektbaum** (`PermsProjectsScreen`, `▲` = weicht vom Oberprojekt ab; Detail zeigt „Fehlt ggü. Oberprojekt") und **Gruppenliste** (`PermsGroupsScreen` → `PermsGroupDetailScreen`: Mitglieder mit Footprint-Abweichung ggü. der **Mehrheit** `▲` und Warnung `⚠` für unübliche direkte Mitgliedschaften). Aktionen: `f` Teilbaum angleichen (`plan_propagation`), `c` von Projekt übertragen (`plan_transfer`), `a` Gruppenmitglied hinzufügen, `h` Abweichler heilen (additiv zur Mehrheit), `n` neuen Benutzer anlegen (Status invited/active, optional Klonen von Gruppen + direkten Mitgliedschaften einer Vorlage). Alles **additiv** (nie entfernen), gesammelt in `PermissionQueue` als typisierte `PermAction`s (`AddProjectMembership`/`AddGroupMembers`/`CloneInto`/`CreateUserClone`, je mit `describe()`+`apply()`), per `g` reviewed und angewendet.
 
 ### Datenfluss
 
@@ -82,9 +84,11 @@ Eigener Modus (`op perms [projekt]`) mit eigener `PermsApp` (kein Task-State). Z
 | ProjectFilterScreen | `tui/project_filter_screen.py` | Hierarchie-aware, persistiert in Config |
 | ReviewScreen | `tui/review_screen.py` | Batch-Review vor Apply |
 | ApplyingScreen | `tui/applying_screen.py` | Batch-PATCH-Ausführung |
-| PermsProjectsScreen | `tui/perms_projects_screen.py` | `op perms`-Root: Projektbaum mit Mismatch-Flag (`▲`); Enter Detail, `c` Übertragen, `f` Teilbaum angleichen, `g` Review, `r` Neu laden, `q` Quit |
-| PermsDetailScreen | `tui/perms_detail_screen.py` | Gruppen (mit eingeklappten Mitgliedern) + Direkt-User eines Projekts |
-| PermsReviewScreen / PermsApplyingScreen | `tui/perms_review_screen.py`, `tui/perms_applying_screen.py` | Review (`d` entfernen, `g` anwenden) + Batch-Ausführung der Mitgliedschaften |
+| PermsProjectsScreen | `tui/perms_projects_screen.py` | `op perms`-Root: Projektbaum mit Mismatch-Flag (`▲`); Enter Detail, `v` Gruppensicht, `c` Übertragen, `f` Teilbaum angleichen, `g` Review, `r` Neu laden, `q` Quit |
+| PermsDetailScreen | `tui/perms_detail_screen.py` | Gruppen (mit eingeklappten Mitgliedern) + Direkt-User (`⚠`); Sektion „Fehlt ggü. Oberprojekt" |
+| PermsGroupsScreen / PermsGroupDetailScreen | `tui/perms_groups_screen.py`, `tui/perms_group_detail_screen.py` | Gruppenliste (`v` zurück); Detail: Mitglieder mit Abweichung `▲`/`⚠`, `a` add, `h` heilen, `n` neuer User |
+| PermsNewUserModal | `tui/perms_new_user_modal.py` | Benutzeranlage: `Ctrl+S` anlegen, `Ctrl+T` Status invited/active, `Ctrl+P` Vorlage |
+| PermsReviewScreen / PermsApplyingScreen | `tui/perms_review_screen.py`, `tui/perms_applying_screen.py` | Review (`d` entfernen, `g` anwenden) + Batch-Ausführung der `PermAction`s |
 
 ### Date-Shortcuts (UpdateModal)
 

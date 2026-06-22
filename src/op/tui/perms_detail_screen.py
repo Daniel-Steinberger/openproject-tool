@@ -12,7 +12,7 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header
 
-from op.perms import build_source_set, visible_members
+from op.perms import build_source_set, missing_entries, visible_members
 
 
 class PermsDetailScreen(Screen[None]):
@@ -54,8 +54,7 @@ class PermsDetailScreen(Screen[None]):
         )
 
         if not groups and not users:
-            table.add_row(Text('(keine direkten Berechtigungen)', style='dim'), '')
-            return
+            table.add_row(Text('(keine direkten Berechtigungen)', style='dim'), Text(''))
 
         for g in groups:
             gname = self.app.principal_label('group', g.principal_id)
@@ -73,8 +72,32 @@ class PermsDetailScreen(Screen[None]):
                 )
         for u in users:
             table.add_row(
-                self.app.principal_label('user', u.principal_id),
-                self.app.role_label(roles_by_principal[('user', u.principal_id)]),
+                Text(f'⚠ {self.app.principal_label("user", u.principal_id)}', style='yellow'),
+                Text(
+                    f'{self.app.role_label(roles_by_principal[("user", u.principal_id)])}'
+                    '  · direkt (unüblich)',
+                    style='yellow',
+                ),
+            )
+
+        self._add_deviation_section(table, source)
+
+    def _add_deviation_section(self, table: DataTable, source) -> None:  # noqa: ANN001
+        """List what this project is missing compared to its parent project."""
+        parent = self.app.parents.get(self.project_id)
+        if parent is None or parent not in self.app.projects:
+            return
+        missing = missing_entries(self.app.source_set(parent), source)
+        if not missing:
+            return
+        pname = self.app.projects.get(parent, str(parent))
+        table.add_row(Text(''), Text(''))
+        table.add_row(Text(f'▲ Fehlt ggü. Oberprojekt ({pname}):', style='bold yellow'), Text(''))
+        for e in sorted(missing, key=lambda x: (x.kind, x.principal_id)):
+            prefix = '▸ ' if e.kind == 'group' else '⚠ '
+            table.add_row(
+                Text(f'  {prefix}{self.app.principal_label(e.kind, e.principal_id)}', style='yellow'),
+                Text(self.app.role_label(sorted(e.role_ids)), style='yellow'),
             )
 
     def action_back(self) -> None:
