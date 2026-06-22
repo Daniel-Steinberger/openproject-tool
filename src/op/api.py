@@ -13,8 +13,10 @@ from op.models import (
     Activity,
     CustomField,
     Group,
+    Membership,
     Priority,
     Project,
+    Role,
     Status,
     User,
     WorkPackage,
@@ -90,6 +92,67 @@ class OpenProjectClient:
     async def get_groups(self) -> list[Group]:
         elements = await self._get_collection('/groups')
         return [Group.from_api(e) for e in elements]
+
+    async def get_roles(self) -> list[Role]:
+        elements = await self._get_collection('/roles')
+        return [Role.from_api(e) for e in elements]
+
+    # --- memberships ------------------------------------------------------
+
+    async def get_memberships(self, project_id: int) -> list[Membership]:
+        """All project memberships for one project (users AND groups, incl. the
+        per-user entries OpenProject materialises from group memberships)."""
+        filters = [{'project': {'operator': '=', 'values': [str(project_id)]}}]
+        params = {'filters': json.dumps(filters), 'pageSize': str(_DEFAULT_PAGE_SIZE)}
+        data = await self._request('GET', '/memberships', params=params)
+        elements = list(data['_embedded']['elements'])
+        total = data.get('total', len(elements))
+        if total > len(elements):
+            pages = math.ceil(total / _DEFAULT_PAGE_SIZE)
+            extra = await asyncio.gather(*(
+                self._request('GET', '/memberships', params={
+                    'filters': json.dumps(filters),
+                    'pageSize': str(_DEFAULT_PAGE_SIZE),
+                    'offset': str(p),
+                })
+                for p in range(2, pages + 1)
+            ))
+            for d in extra:
+                elements.extend(d['_embedded']['elements'])
+        return [Membership.from_api(e) for e in elements]
+
+    async def get_group_members(self, group_id: int) -> list[int]:
+        """Return the user ids belonging to a group (from the group's _links.members)."""
+        data = await self._request('GET', f'/groups/{group_id}')
+        return Group.from_api(data).member_ids
+
+    async def create_membership(
+        self,
+        project_id: int,
+        principal_id: int,
+        role_ids: list[int],
+        *,
+        principal_type: str = 'user',
+    ) -> Membership:
+        """Add a principal (user or group) to a project with the given roles."""
+        base = 'groups' if principal_type == 'group' else 'users'
+        body = {
+            '_links': {
+                'project': {'href': f'/api/v3/projects/{project_id}'},
+                'principal': {'href': f'/api/v3/{base}/{principal_id}'},
+                'roles': [{'href': f'/api/v3/roles/{rid}'} for rid in role_ids],
+            }
+        }
+        data = await self._request('POST', '/memberships', json=body)
+        return Membership.from_api(data)
+
+    async def update_membership_roles(
+        self, membership_id: int, role_ids: list[int]
+    ) -> Membership:
+        """Set the roles of an existing membership (used to add missing roles)."""
+        body = {'_links': {'roles': [{'href': f'/api/v3/roles/{rid}'} for rid in role_ids]}}
+        data = await self._request('PATCH', f'/memberships/{membership_id}', json=body)
+        return Membership.from_api(data)
 
     async def get_custom_fields(
         self, *, project_ids: list[int], type_ids: list[int]
