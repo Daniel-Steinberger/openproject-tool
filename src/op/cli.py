@@ -26,6 +26,7 @@ from op.commits import (
     parse_git_log,
 )
 from op.config import Config, DefaultsConfig, default_config_path, get_api_key, load_config
+from op.html_to_markdown import html_to_markdown
 from op.logging_setup import setup_logging
 from op.models import WorkPackage
 from op.search import FILTER_KEYS, build_api_filter_variants, parse
@@ -392,7 +393,17 @@ async def _run_commits(
                 f'Tasks: {", ".join(f"#{t}" for t in sorted(by_task))}. In OpenProject prüfen.'
             )
             return 0
-        console.print(f'[red]Webhook abgelehnt (HTTP {status}):[/red] {text[:300]}')
+        console.print(f'[red]Webhook abgelehnt (HTTP {status}).[/red]')
+        body = text.strip()
+        if '<html' in body[:2000].lower():
+            body = html_to_markdown(body).strip()
+        console.print(body or '(leere Antwort)')
+        if status >= 500:
+            console.print(
+                '[dim]HTTP 500 = serverseitige Exception in OpenProject beim Verarbeiten '
+                'des Push-Events. Die genaue Ursache steht in den OpenProject-Server-Logs '
+                '(z.B. docker logs / /var/log) — die HTML-Seite zeigt sie nicht.[/dim]'
+            )
         return 1
 
     for task_id, task_commits in sorted(by_task.items()):

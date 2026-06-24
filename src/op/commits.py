@@ -12,9 +12,11 @@ import re
 from dataclasses import dataclass, field
 
 # Record/field separators used in our `git log --format=...` calls.
-GIT_LOG_FORMAT = '%H%x1f%h%x1f%s%x1f%b%x1e'
+# Fields: full sha, short sha, subject, committer-date (ISO), author name, author email, body.
+GIT_LOG_FORMAT = '%H%x1f%h%x1f%s%x1f%cI%x1f%an%x1f%ae%x1f%b%x1e'
 _REC_SEP = '\x1e'
 _FIELD_SEP = '\x1f'
+_NULL_SHA = '0' * 40
 
 _TASK_REF_RE = re.compile(r'(?:OP)?#(\d+)', re.IGNORECASE)
 
@@ -25,6 +27,9 @@ class Commit:
     short_sha: str
     subject: str
     task_ids: set[int] = field(default_factory=set)
+    timestamp: str = ''
+    author_name: str = ''
+    author_email: str = ''
 
 
 def parse_task_refs(message: str) -> set[int]:
@@ -40,11 +45,14 @@ def parse_git_log(raw: str) -> list[Commit]:
         if not record:
             continue
         parts = record.split(_FIELD_SEP)
-        if len(parts) < 4:
+        if len(parts) < 7:
             continue
-        full, short, subject, body = parts[0], parts[1], parts[2], parts[3]
+        full, short, subject, ts, an, ae, body = parts[:7]
         refs = parse_task_refs(f'{subject}\n{body}')
-        commits.append(Commit(full.strip(), short.strip(), subject.strip(), refs))
+        commits.append(Commit(
+            full.strip(), short.strip(), subject.strip(), refs,
+            timestamp=ts.strip(), author_name=an.strip(), author_email=ae.strip(),
+        ))
     return commits
 
 
@@ -65,38 +73,84 @@ def commit_markdown_line(commit: Commit, base_url: str, project: str) -> str:
     return f'- [{commit.short_sha}]({url}) {commit.subject}'
 
 
+_FALLBACK_TS = '2024-01-01T00:00:00+00:00'
+
+
 def build_push_payload(
     commits: list[Commit], base_url: str, project: str,
     *, ref: str = 'refs/heads/main', user_name: str = 'op-commits',
+    project_id: int = 1,
 ) -> dict:
-    """Minimal GitLab 'Push Hook' payload. OpenProject's GitLab integration scans
-    each commit message for OP#<id> and links it to that work package."""
-    repo = f'{base_url.rstrip("/")}/{project.strip("/")}'
+    """A complete GitLab 'Push Hook' payload (matching GitLab's real format, so
+    OpenProject's integration doesn't choke). OpenProject scans each commit
+    message for OP#<id> and links it to that work package."""
+    base = base_url.rstrip('/')
+    ns = project.strip('/')
+    repo = f'{base}/{ns}'
+    name = ns.split('/')[-1]
+    git_http = f'{repo}.git'
+    head = commits[0].full_sha if commits else _NULL_SHA
+    author_email = next((c.author_email for c in commits if c.author_email), 'op-commits@local')
+
     return {
         'object_kind': 'push',
         'event_name': 'push',
+        'before': _NULL_SHA,
+        'after': head,
         'ref': ref,
+        'ref_protected': False,
+        'checkout_sha': head,
+        'message': None,
+        'user_id': 0,
         'user_name': user_name,
+        'user_username': user_name,
+        'user_email': author_email,
+        'user_avatar': None,
+        'project_id': project_id,
         'project': {
-            'id': 0,
-            'name': project.rstrip('/').split('/')[-1],
-            'path_with_namespace': project.strip('/'),
+            'id': project_id,
+            'name': name,
+            'description': '',
             'web_url': repo,
-            'http_url': f'{repo}.git',
+            'avatar_url': None,
+            'git_ssh_url': f'git@{ns}.git',
+            'git_http_url': git_http,
+            'namespace': ns.split('/')[0] if '/' in ns else ns,
+            'visibility_level': 0,
+            'path_with_namespace': ns,
+            'default_branch': 'main',
+            'homepage': repo,
+            'url': git_http,
+            'ssh_url': f'git@{ns}.git',
+            'http_url': git_http,
         },
-        'repository': {'name': project.strip('/'), 'homepage': repo, 'url': f'{repo}.git'},
         'commits': [
             {
                 'id': c.full_sha,
                 'message': c.subject,
                 'title': c.subject,
-                'timestamp': '',
+                'timestamp': c.timestamp or _FALLBACK_TS,
                 'url': commit_url(c.full_sha, base_url, project),
-                'author': {'name': user_name, 'email': 'op-commits@local'},
+                'author': {
+                    'name': c.author_name or user_name,
+                    'email': c.author_email or 'op-commits@local',
+                },
+                'added': [],
+                'modified': [],
+                'removed': [],
             }
             for c in commits
         ],
         'total_commits_count': len(commits),
+        'repository': {
+            'name': name,
+            'url': git_http,
+            'description': '',
+            'homepage': repo,
+            'git_http_url': git_http,
+            'git_ssh_url': f'git@{ns}.git',
+            'visibility_level': 0,
+        },
     }
 
 

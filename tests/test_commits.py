@@ -42,13 +42,18 @@ class TestMarkdown:
 
 class TestParseGitLog:
     def test_parses_records(self) -> None:
+        # Fields: full, short, subject, timestamp, author name, author email, body
         raw = (
-            'FULL1\x1fshort1\x1fSubject one OP#10\x1fbody line\x1e'
-            'FULL2\x1fshort2\x1fSubject two\x1f#11 in body\x1e'
+            'FULL1\x1fshort1\x1fSubject one OP#10\x1f2024-06-01T10:00:00+02:00'
+            '\x1fAlice\x1falice@x\x1fbody line\x1e'
+            'FULL2\x1fshort2\x1fSubject two\x1f2024-06-02T11:00:00+02:00'
+            '\x1fBob\x1fbob@x\x1f#11 in body\x1e'
         )
         commits = parse_git_log(raw)
         assert [c.short_sha for c in commits] == ['short1', 'short2']
         assert commits[0].task_ids == {10}
+        assert commits[0].timestamp == '2024-06-01T10:00:00+02:00'
+        assert commits[0].author_name == 'Alice'
         assert commits[1].task_ids == {11}
 
 

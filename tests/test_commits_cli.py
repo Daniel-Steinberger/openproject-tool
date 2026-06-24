@@ -66,7 +66,7 @@ async def test_dry_run_is_local_preview_without_cf_or_api(
     monkeypatch.setenv('OP_API_KEY', 'k')
     monkeypatch.setattr(
         'subprocess.run',
-        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1fbody\x1e'),
+        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1f2024-06-01T10:00:00+02:00\x1fAlice\x1falice@x\x1fbody\x1e'),
     )
     wp_route = respx_mock.get(f'{BASE_URL}/api/v3/work_packages/7190')
     patch_route = respx_mock.patch(f'{BASE_URL}/api/v3/work_packages/7190')
@@ -88,7 +88,7 @@ async def test_writes_custom_field(
     monkeypatch.setenv('OP_API_KEY', 'k')
     monkeypatch.setattr(
         'subprocess.run',
-        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1fbody\x1e'),
+        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1f2024-06-01T10:00:00+02:00\x1fAlice\x1falice@x\x1fbody\x1e'),
     )
     respx_mock.get(f'{BASE_URL}/api/v3/work_packages/7190').mock(
         return_value=httpx.Response(200, json=_wp_json())
@@ -126,7 +126,7 @@ async def test_push_sends_synthetic_gitlab_event(
     monkeypatch.delenv('OP_GITLAB_WEBHOOK_TOKEN', raising=False)
     monkeypatch.setattr(
         'subprocess.run',
-        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1fbody\x1e'),
+        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1f2024-06-01T10:00:00+02:00\x1fAlice\x1falice@x\x1fbody\x1e'),
     )
     hook = respx_mock.post(f'{BASE_URL}/webhooks/gitlab').mock(
         return_value=httpx.Response(200, text='ok')
@@ -152,7 +152,7 @@ async def test_push_without_token_errors(
     monkeypatch.delenv('OP_GITLAB_WEBHOOK_TOKEN', raising=False)
     monkeypatch.setattr(
         'subprocess.run',
-        _fake_git('FULLSHA1\x1fabc1234\x1fFix OP#7190\x1fb\x1e'),
+        _fake_git('FULLSHA1\x1fabc1234\x1fFix OP#7190\x1f2024-06-01T10:00:00+02:00\x1fAlice\x1falice@x\x1fb\x1e'),
     )
     args = _parse_args(['commits', '--push', '--repo', '/tmp'])
     buf, console = _console()
