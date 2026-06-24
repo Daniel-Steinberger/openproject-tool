@@ -95,10 +95,14 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
         cm.add_argument('--push', action='store_true',
                         help='Commits als GitLab-Push-Event an die OpenProject-Integration '
                              'senden (Vorschau ohne echten Webhook). Braucht [gitlab] webhook_token.')
+        cm.add_argument('--base-url', default=None,
+                        help='OpenProject-URL für den --push (Default: [connection] base_url). '
+                             'Z.B. http://localhost:3000 zum Testen lokal.')
         ns = cm.parse_args(argv[1:])
         return argparse.Namespace(
             command='commits', commits_range=ns.range, commits_repo=ns.repo,
             commits_dry_run=ns.dry_run, commits_comment=ns.comment, commits_push=ns.push,
+            commits_base_url=ns.base_url,
             load_remote_data=False, interactive=False, query=[],
         )
 
@@ -385,9 +389,13 @@ async def _run_commits(
         # de-dup by sha, preserve order
         seen: set[str] = set()
         unique = [c for c in all_commits if not (c.full_sha in seen or seen.add(c.full_sha))]
+        webhook_base = args.commits_base_url or config.connection.base_url
+        target = client.gitlab_webhook_url(webhook_base)
+        console.print(f'[dim]→ POST {target}?key=***[/dim]')
         payload = build_push_payload(unique, base, proj)
         status, text = await client.send_gitlab_push(
-            webhook_token=token, payload=payload, secret=gl.webhook_secret or None,
+            webhook_token=token, payload=payload,
+            secret=gl.webhook_secret or None, base_url=webhook_base,
         )
         if 200 <= status < 300:
             console.print(
@@ -395,16 +403,22 @@ async def _run_commits(
                 f'Tasks: {", ".join(f"#{t}" for t in sorted(by_task))}. In OpenProject prüfen.'
             )
             return 0
-        console.print(f'[red]Webhook abgelehnt (HTTP {status}).[/red]')
+        console.print(f'[red]Webhook abgelehnt (HTTP {status}) von {target}[/red]')
         body = text.strip()
         if '<html' in body[:2000].lower():
             body = html_to_markdown(body).strip()
         console.print(body or '(leere Antwort)')
-        if status >= 500:
+        if status in (401, 403):
             console.print(
-                '[dim]HTTP 500 = serverseitige Exception in OpenProject beim Verarbeiten '
-                'des Push-Events. Die genaue Ursache steht in den OpenProject-Server-Logs '
-                '(z.B. docker logs / /var/log) — die HTML-Seite zeigt sie nicht.[/dim]'
+                '[dim]401/403 = der `key` (webhook_token) wurde von DIESER Instanz nicht '
+                'akzeptiert. Prüfen: zeigt --base-url/[connection] auf die richtige Instanz? '
+                'Ist der Token ein gültiges API-Token des dort als GitLab-Webhook-User '
+                'hinterlegten Benutzers (Administration → Integrationen → GitLab)?[/dim]'
+            )
+        elif status >= 500:
+            console.print(
+                '[dim]HTTP 500 = serverseitige Exception beim Verarbeiten des Push-Events; '
+                'genaue Ursache in den OpenProject-Server-Logs.[/dim]'
             )
         return 1
 

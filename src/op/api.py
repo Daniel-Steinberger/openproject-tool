@@ -433,18 +433,24 @@ class OpenProjectClient:
             json={'comment': {'raw': text}},
         )
 
+    def gitlab_webhook_url(self, base_url: str | None = None) -> str:
+        """The OpenProject GitLab webhook endpoint (default: this client's base URL)."""
+        return f'{(base_url or self._base_url).rstrip("/")}/webhooks/gitlab'
+
     async def send_gitlab_push(
-        self, *, webhook_token: str, payload: dict[str, T.Any], secret: str | None = None
+        self, *, webhook_token: str, payload: dict[str, T.Any],
+        secret: str | None = None, base_url: str | None = None,
     ) -> tuple[int, str]:
         """POST a synthetic GitLab 'Push Hook' to OpenProject's integration webhook
-        (`/webhooks/gitlab?key=…`, outside /api/v3). Returns (status_code, body)."""
+        (`/webhooks/gitlab?key=…`, outside /api/v3). `base_url` overrides the target
+        instance (e.g. a local OpenProject). Returns (status_code, body)."""
         if self._http is None:
             raise OpenProjectError('client not open')
         headers = {'X-Gitlab-Event': 'Push Hook'}
         if secret:
             headers['X-Gitlab-Token'] = secret
         resp = await self._http.post(
-            '/webhooks/gitlab',
+            self.gitlab_webhook_url(base_url),  # absolute URL overrides client base
             params={'key': webhook_token},
             json=payload,
             headers=headers,
