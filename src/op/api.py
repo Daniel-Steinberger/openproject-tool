@@ -391,6 +391,15 @@ class OpenProjectClient:
         data = await self._request('PATCH', f'/work_packages/{wp_id}', json=body)
         return WorkPackage.from_api(data)
 
+    async def set_custom_field_text(
+        self, wp_id: int, *, lock_version: int, cf_id: int, markdown: str
+    ) -> WorkPackage:
+        """Set a long-text (formattable) custom field to the given markdown."""
+        changes = {f'customField{cf_id}': {'raw': markdown, 'format': 'markdown'}}
+        return await self.update_work_package(
+            wp_id, lock_version=lock_version, changes=changes
+        )
+
     async def get_activities(self, wp_id: int) -> list[Activity]:
         elements = await self._get_collection(f'/work_packages/{wp_id}/activities')
         return [Activity.from_api(e) for e in elements]

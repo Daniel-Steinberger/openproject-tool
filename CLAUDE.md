@@ -14,6 +14,9 @@ pytest -x                     # bei erstem Fehler abbrechen
 # TUI starten (interaktiv)
 op -i [query]
 
+# Git-Commits verlinkt ans Work Package (Spike, Branch feature/op-commits)
+op commits [<git-range>] [--dry-run] [--comment]
+
 # Metadaten vom Server laden (befüllt [remote.*] in Config)
 op --load-remote-data
 
@@ -101,3 +104,7 @@ Zwei Wurzelsichten, umschaltbar mit `v`: **Projektbaum** (`PermsProjectsScreen`,
 - **Async-First**: Alle API-Calls und TUI-Aktionen sind `async/await`. Tests mit `pytest-asyncio`.
 - **Config als Single Source of Truth**: `remote.*`-Daten kommen ausschließlich aus der Config (nach `--load-remote-data`), nicht aus Runtime-API-Calls in der TUI.
 - **`current_query`** ist Runtime-State in `OpApp` – wird beim Start übergeben und kann per Filter-Screen neu gesetzt werden, was einen API-Reload auslöst.
+
+## `op commits` (Spike, Branch `feature/op-commits`, nicht gemergt)
+
+`op commits [<range>] [--dry-run] [--comment]` liest das lokale `git log`, findet Task-Referenzen (`#<id>`/`OP#<id>`) und schreibt pro Task eine verlinkte Commit-Liste (`- [<short>](<gitlab-url>) <erste Zeile>`) ins Langtext-Custom-Field „Commits" (oder als Kommentar via `--comment`). Reine Logik in `commits.py` (`parse_task_refs`, `parse_git_log`, `commit_markdown_line`, `merge_commit_lines` – additiv/dedupe per Hash). GitLab-URL aus `[gitlab] base_url`/`project` in der Config; `api.set_custom_field_text` schreibt das CF als Markdown. **Experiment** – native GitLab-Integration vs. dieses Tool ist noch offen.

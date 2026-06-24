@@ -299,6 +299,13 @@ class WorkPackage(_ApiModel):
             custom_field_multi_links=custom_field_multi_links,
         )
 
+    def custom_field_text(self, cf_id: int) -> str:
+        """Raw text of a long-text (formattable) custom field, '' if unset."""
+        value = self.custom_fields.get(f'customField{cf_id}')
+        if isinstance(value, dict):
+            return value.get('raw') or ''
+        return value if isinstance(value, str) else ''
+
 
 def _link_id(links: dict[str, T.Any], key: str) -> int | None:
     link = links.get(key) or {}

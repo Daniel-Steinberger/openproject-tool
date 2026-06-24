@@ -271,6 +271,15 @@ class LoggingConfig(BaseModel):
     file: Path | None = None
 
 
+class GitlabConfig(BaseModel):
+    base_url: str = ''
+    project: str = ''
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.base_url and self.project)
+
+
 class Config(BaseModel):
     connection: ConnectionConfig
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
@@ -278,6 +287,7 @@ class Config(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     filter: FilterConfig = Field(default_factory=FilterConfig)
     keybindings: KeybindingsConfig = Field(default_factory=KeybindingsConfig)
+    gitlab: GitlabConfig = Field(default_factory=GitlabConfig)
 
 
 def default_config_path() -> Path:

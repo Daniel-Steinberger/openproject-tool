@@ -50,6 +50,20 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
             load_remote_data=False, interactive=False, query=[],
         )
 
+    if argv and argv[0] == 'commits':
+        cm = argparse.ArgumentParser(prog='op commits')
+        cm.add_argument('range', nargs='?', default='HEAD~50..HEAD',
+                        help='git-Range (Default: HEAD~50..HEAD)')
+        cm.add_argument('--dry-run', action='store_true', help='Nur anzeigen, nichts schreiben')
+        cm.add_argument('--comment', action='store_true',
+                        help='Als Kommentar statt ins "Commits"-Custom-Field schreiben')
+        ns = cm.parse_args(argv[1:])
+        return argparse.Namespace(
+            command='commits', commits_range=ns.range,
+            commits_dry_run=ns.dry_run, commits_comment=ns.comment,
+            load_remote_data=False, interactive=False, query=[],
+        )
+
     parser = argparse.ArgumentParser(
         prog='op',
         description='Fast, keyboard-driven CLI and TUI for OpenProject.',
@@ -123,6 +137,9 @@ async def run(
 
         if getattr(args, 'command', None) == 'perms':
             return await _run_perms(args, client, config, console)
+
+        if getattr(args, 'command', None) == 'commits':
+            return await _run_commits(args, client, config, console)
 
         try:
             query = parse(args.query, defaults=config.defaults)
@@ -200,6 +217,93 @@ async def _run_perms(
     app = PermsApp(config=config, client=client, start_project=start)
     await app.run_async()
     return 0
+
+
+async def _run_commits(
+    args: argparse.Namespace,
+    client: OpenProjectClient,
+    config: Config,
+    console: Console,
+) -> int:
+    """Attach git commits (referencing OP#<id>/#<id>) to their work packages."""
+    import subprocess
+    from collections import defaultdict
+
+    from op.commits import GIT_LOG_FORMAT, merge_commit_lines, parse_git_log
+
+    gl = config.gitlab
+    if not gl.is_configured:
+        console.print(
+            '[red]GitLab nicht konfiguriert.[/red] Bitte [gitlab] base_url und project '
+            'in der config.toml setzen.'
+        )
+        return 2
+
+    cf_id: int | None = None
+    if not args.commits_comment:
+        cf_id = next(
+            (cid for cid, name in config.remote.custom_fields.items()
+             if name.strip().lower() == 'commits'),
+            None,
+        )
+        if cf_id is None:
+            console.print(
+                '[red]Kein Custom Field "Commits" gefunden.[/red] In OpenProject als '
+                'Langtext-CF anlegen, dann `op --load-remote-data`. Oder `--comment` nutzen.'
+            )
+            return 2
+
+    try:
+        out = subprocess.run(
+            ['git', 'log', args.commits_range, f'--format={GIT_LOG_FORMAT}'],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        console.print(f'[red]git log fehlgeschlagen:[/red] {exc}')
+        return 2
+
+    commits = parse_git_log(out)
+    by_task: dict[int, list] = defaultdict(list)
+    for c in commits:
+        for tid in c.task_ids:
+            by_task[tid].append(c)
+    if not by_task:
+        console.print('Keine Commits mit Task-Referenz (#id / OP#id) im Range gefunden.')
+        return 0
+
+    base, proj = gl.base_url, gl.project
+    rc = 0
+    for task_id, task_commits in sorted(by_task.items()):
+        wp = await client.get_work_package(task_id)
+        if wp is None:
+            console.print(f'[yellow]#{task_id} nicht gefunden — übersprungen.[/yellow]')
+            continue
+        if args.commits_comment:
+            from op.commits import commit_markdown_line
+            new = [commit_markdown_line(c, base, proj) for c in task_commits]
+            body = '\n'.join(new)
+            if args.commits_dry_run:
+                console.print(f'[cyan]#{task_id}[/cyan] (Kommentar):\n{body}')
+            else:
+                await client.add_comment(task_id, body)
+                console.print(f'[green]#{task_id}[/green]: {len(new)} Commit(s) als Kommentar.')
+            continue
+        existing = wp.custom_field_text(cf_id)
+        merged, added = merge_commit_lines(existing, task_commits, base, proj)
+        if not added:
+            console.print(f'#{task_id}: nichts Neues.')
+            continue
+        if args.commits_dry_run:
+            console.print(
+                f'[cyan]#{task_id}[/cyan] (+{len(added)}):\n'
+                + '\n'.join(f'  {a.short_sha} {a.subject}' for a in added)
+            )
+        else:
+            await client.set_custom_field_text(
+                task_id, lock_version=wp.lock_version, cf_id=cf_id, markdown=merged
+            )
+            console.print(f'[green]#{task_id}[/green]: {len(added)} neue(r) Commit(s) ergänzt.')
+    return rc
 
 
 def _resolve_project(token: str, config: Config) -> int | None:
