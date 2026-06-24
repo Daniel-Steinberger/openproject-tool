@@ -84,8 +84,9 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
 
     if argv and argv[0] == 'commits':
         cm = argparse.ArgumentParser(prog='op commits')
-        cm.add_argument('range', nargs='?', default='HEAD~50..HEAD',
-                        help='git-Range (z.B. HEAD~50..HEAD) ODER ein einzelner Commit (SHA).')
+        cm.add_argument('range', nargs='?', default=None,
+                        help='git-Range (z.B. HEAD~50..HEAD) ODER ein einzelner Commit (SHA). '
+                             'Default: die letzten 50 Commits.')
         cm.add_argument('--repo', default=None,
                         help='Pfad zum git-Repository (Default: aktuelles Verzeichnis).')
         cm.add_argument('--dry-run', action='store_true', help='Nur anzeigen, nichts schreiben')
@@ -330,6 +331,7 @@ async def _run_commits(
     # `op` is often run via `uv --directory <tool> run op`, which changes the
     # process cwd to the tool repo. The user's actual directory survives in $PWD.
     repo = args.commits_repo or os.environ.get('PWD') or os.getcwd()
+    range_label = args.commits_range or 'letzte 50 Commits'
     try:
         out = subprocess.run(
             git_log_command(args.commits_range),
@@ -350,7 +352,7 @@ async def _run_commits(
     if not by_task:
         console.print(
             f'Keine Commits mit Task-Referenz (#id / OP#id) gefunden '
-            f'(repo: [cyan]{repo}[/cyan], range: {args.commits_range}).'
+            f'(repo: [cyan]{repo}[/cyan], range: {range_label}).'
         )
         return 0
 
@@ -360,7 +362,7 @@ async def _run_commits(
     if args.commits_dry_run:
         console.print(
             f'[dim](dry-run — es wird nichts geschrieben; repo {repo}, range '
-            f'{args.commits_range})[/dim]'
+            f'{range_label})[/dim]'
         )
         for task_id, task_commits in sorted(by_task.items()):
             console.print(f'[cyan]#{task_id}[/cyan] ({len(task_commits)}):')

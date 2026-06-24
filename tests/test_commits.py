@@ -81,6 +81,12 @@ class TestMerge:
 
 
 class TestGitLogCommand:
+    def test_default_is_count_based(self) -> None:
+        # None/empty → last N commits (works even in repos with < N commits).
+        cmd = git_log_command(None)
+        assert cmd[:4] == ['git', 'log', '-n', '50']
+        assert '..' not in ' '.join(cmd)
+
     def test_range(self) -> None:
         cmd = git_log_command('HEAD~5..HEAD')
         assert cmd[:3] == ['git', 'log', 'HEAD~5..HEAD'] and '-1' not in cmd

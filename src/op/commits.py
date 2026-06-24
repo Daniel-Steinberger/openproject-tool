@@ -56,11 +56,19 @@ def parse_git_log(raw: str) -> list[Commit]:
     return commits
 
 
-def git_log_command(range_or_rev: str) -> list[str]:
-    """git log args for either a range (`a..b`) or a single revision (sha)."""
+DEFAULT_MAX_COUNT = 50
+
+
+def git_log_command(range_or_rev: str | None) -> list[str]:
+    """git log args for the default (last N commits), a range (`a..b`) or a
+    single revision (sha). A count-based default works even in repos with very
+    few commits (where `HEAD~50..HEAD` would fail)."""
+    fmt = f'--format={GIT_LOG_FORMAT}'
+    if not range_or_rev:
+        return ['git', 'log', '-n', str(DEFAULT_MAX_COUNT), fmt]
     if '..' in range_or_rev:
-        return ['git', 'log', range_or_rev, f'--format={GIT_LOG_FORMAT}']
-    return ['git', 'log', '-1', range_or_rev, f'--format={GIT_LOG_FORMAT}']
+        return ['git', 'log', range_or_rev, fmt]
+    return ['git', 'log', '-1', range_or_rev, fmt]
 
 
 def commit_url(full_sha: str, base_url: str, project: str) -> str:
