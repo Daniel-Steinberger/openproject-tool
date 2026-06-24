@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -17,6 +18,12 @@ from rich.text import Text
 
 from op.actions import load_remote_data
 from op.api import AuthError, OpenProjectClient, OpenProjectError
+from op.commits import (
+    GIT_LOG_FORMAT,
+    commit_markdown_line,
+    merge_commit_lines,
+    parse_git_log,
+)
 from op.config import Config, DefaultsConfig, default_config_path, get_api_key, load_config
 from op.logging_setup import setup_logging
 from op.models import WorkPackage
@@ -289,11 +296,6 @@ async def _run_commits(
     console: Console,
 ) -> int:
     """Attach git commits (referencing OP#<id>/#<id>) to their work packages."""
-    import subprocess
-    from collections import defaultdict
-
-    from op.commits import GIT_LOG_FORMAT, merge_commit_lines, parse_git_log
-
     gl = config.gitlab
     if not gl.is_configured:
         console.print(
@@ -301,8 +303,6 @@ async def _run_commits(
             'in der config.toml setzen.'
         )
         return 2
-
-    from op.commits import commit_markdown_line
 
     # The "Commits" custom field is only required for a real CF write. Dry-run is
     # a pure local preview (no API, no field), and --comment writes a comment.
