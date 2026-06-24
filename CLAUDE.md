@@ -20,6 +20,9 @@ op commits [<git-range>] [--dry-run] [--comment]
 # Metadaten vom Server laden (befüllt [remote.*] in Config)
 op --load-remote-data
 
+# Config-Datei im $EDITOR öffnen (Pfad steht auch im --help)
+op --config
+
 # Paket installieren (entwicklungsmodus)
 pip install -e .
 ```

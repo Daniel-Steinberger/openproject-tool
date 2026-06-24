@@ -38,6 +38,22 @@ def main() -> None:
     sys.exit(exit_code or 0)
 
 
+# Sub-modes dispatched by the first positional token (before the query parser).
+# Listed in --help via the epilog since argparse itself doesn't know them.
+_MODES: list[tuple[str, str]] = [
+    ('perms [projekt]', 'Berechtigungs-Tool (eigener TUI-Modus): Projekt-/Gruppensicht, '
+                        'Übertragen, Hierarchie angleichen, Benutzerverwaltung.'),
+]
+
+
+def _modes_epilog() -> str:
+    lines = ['Modi (als erstes Argument statt einer Suchanfrage):']
+    for name, desc in _MODES:
+        lines.append(f'  op {name:18} {desc}')
+    lines.append("\nHilfe zu einem Modus: z. B. `op perms --help`.")
+    return '\n'.join(lines)
+
+
 def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> argparse.Namespace:
     # `op perms [projekt]` is a distinct mode (own TUI), kept separate from the
     # work-package query parser so the positional `query` semantics are unchanged.
@@ -67,6 +83,8 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
     parser = argparse.ArgumentParser(
         prog='op',
         description='Fast, keyboard-driven CLI and TUI for OpenProject.',
+        epilog=_modes_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.set_defaults(command=None)
     parser.add_argument(
@@ -82,11 +100,24 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
         help='Open the interactive TUI instead of printing results.',
     )
     parser.add_argument(
+        '--config',
+        action='store_true',
+        help=f'Open the config file ({_highlight_path(default_config_path())}) in $EDITOR.',
+    )
+    parser.add_argument(
         'query',
         nargs='*',
         help=_build_query_help(defaults),
     )
     return parser.parse_args(argv)
+
+
+def _highlight_path(path: Path) -> str:
+    """Cyan-highlight a path for --help, but only on a TTY (plain when piped)."""
+    text = str(path)
+    if sys.stdout.isatty():
+        return f'\033[36m{text}\033[0m'
+    return text
 
 
 def _build_query_help(defaults: DefaultsConfig | None) -> str:
@@ -109,6 +140,36 @@ def _build_query_help(defaults: DefaultsConfig | None) -> str:
     return ' '.join(parts)
 
 
+def _open_config_in_editor(path: Path, console: Console) -> int:
+    """Open the config file in $EDITOR (creating it from the template if absent)."""
+    import os
+    import shlex
+    import shutil
+    import subprocess
+
+    if not path.exists():
+        try:
+            load_config(path)  # writes the default template when the file is missing
+        except Exception:  # noqa: BLE001
+            pass
+    editor = (
+        os.environ.get('EDITOR')
+        or os.environ.get('VISUAL')
+        or shutil.which('nano')
+        or shutil.which('vi')
+        or 'vi'
+    )
+    console.print(f'Öffne Config-Datei: [cyan]{path}[/cyan]')
+    try:
+        subprocess.run([*shlex.split(editor), str(path)], check=False)
+    except FileNotFoundError:
+        console.print(
+            f'[yellow]Kein Editor gefunden[/yellow] ($EDITOR nicht gesetzt). '
+            f'Config-Datei: [cyan]{path}[/cyan]'
+        )
+    return 0
+
+
 async def run(
     args: argparse.Namespace,
     *,
@@ -117,6 +178,8 @@ async def run(
     console: Console | None = None,
 ) -> int:
     console = console or Console()
+    if getattr(args, 'config', False):
+        return _open_config_in_editor(config_path or default_config_path(), console)
     if config is None:
         config_path = config_path or default_config_path()
         config = load_config(config_path)
