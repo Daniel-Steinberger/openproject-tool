@@ -48,6 +48,13 @@ def parse_git_log(raw: str) -> list[Commit]:
     return commits
 
 
+def git_log_command(range_or_rev: str) -> list[str]:
+    """git log args for either a range (`a..b`) or a single revision (sha)."""
+    if '..' in range_or_rev:
+        return ['git', 'log', range_or_rev, f'--format={GIT_LOG_FORMAT}']
+    return ['git', 'log', '-1', range_or_rev, f'--format={GIT_LOG_FORMAT}']
+
+
 def commit_url(full_sha: str, base_url: str, project: str) -> str:
     return f'{base_url.rstrip("/")}/{project.strip("/")}/-/commit/{full_sha}'
 
@@ -56,6 +63,41 @@ def commit_markdown_line(commit: Commit, base_url: str, project: str) -> str:
     """A single markdown bullet: `- [<short>](<url>) <subject>`."""
     url = commit_url(commit.full_sha, base_url, project)
     return f'- [{commit.short_sha}]({url}) {commit.subject}'
+
+
+def build_push_payload(
+    commits: list[Commit], base_url: str, project: str,
+    *, ref: str = 'refs/heads/main', user_name: str = 'op-commits',
+) -> dict:
+    """Minimal GitLab 'Push Hook' payload. OpenProject's GitLab integration scans
+    each commit message for OP#<id> and links it to that work package."""
+    repo = f'{base_url.rstrip("/")}/{project.strip("/")}'
+    return {
+        'object_kind': 'push',
+        'event_name': 'push',
+        'ref': ref,
+        'user_name': user_name,
+        'project': {
+            'id': 0,
+            'name': project.rstrip('/').split('/')[-1],
+            'path_with_namespace': project.strip('/'),
+            'web_url': repo,
+            'http_url': f'{repo}.git',
+        },
+        'repository': {'name': project.strip('/'), 'homepage': repo, 'url': f'{repo}.git'},
+        'commits': [
+            {
+                'id': c.full_sha,
+                'message': c.subject,
+                'title': c.subject,
+                'timestamp': '',
+                'url': commit_url(c.full_sha, base_url, project),
+                'author': {'name': user_name, 'email': 'op-commits@local'},
+            }
+            for c in commits
+        ],
+        'total_commits_count': len(commits),
+    }
 
 
 def merge_commit_lines(

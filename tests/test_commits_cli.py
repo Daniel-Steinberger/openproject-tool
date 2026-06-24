@@ -25,12 +25,15 @@ def _console() -> tuple[io.StringIO, Console]:
     return buf, Console(file=buf, width=120, force_terminal=False)
 
 
-def _config(with_cf: bool = True) -> Config:
+def _config(with_cf: bool = True, webhook_token: str = '') -> Config:
     return Config(
         connection=ConnectionConfig(base_url=BASE_URL),
         defaults=DefaultsConfig(),
         remote=RemoteConfig(custom_fields={44: 'Commits'} if with_cf else {}),
-        gitlab=GitlabConfig(base_url='https://gitlab.dvs.ag', project='dvs/dvs'),
+        gitlab=GitlabConfig(
+            base_url='https://gitlab.dvs.ag', project='dvs/dvs',
+            webhook_token=webhook_token,
+        ),
     )
 
 
@@ -40,7 +43,7 @@ class _FakeProc:
 
 
 def _fake_git(stdout: str):  # noqa: ANN202
-    def _run(cmd, capture_output, text, check):  # noqa: ANN001
+    def _run(cmd, **kwargs):  # noqa: ANN001, ANN003
         return _FakeProc(stdout)
     return _run
 
@@ -112,3 +115,47 @@ async def test_missing_cf_errors(
     rc = await run(args, config=_config(with_cf=False), config_path=None, console=console)
     assert rc == 2
     assert 'Commits' in buf.getvalue()
+
+
+async def test_push_sends_synthetic_gitlab_event(
+    monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
+) -> None:
+    import json
+
+    monkeypatch.setenv('OP_API_KEY', 'k')
+    monkeypatch.delenv('OP_GITLAB_WEBHOOK_TOKEN', raising=False)
+    monkeypatch.setattr(
+        'subprocess.run',
+        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1fbody\x1e'),
+    )
+    hook = respx_mock.post(f'{BASE_URL}/webhooks/gitlab').mock(
+        return_value=httpx.Response(200, text='ok')
+    )
+    args = _parse_args(['commits', '--push', '--repo', '/tmp'])
+    buf, console = _console()
+    rc = await run(args, config=_config(webhook_token='bottoken'), config_path=None, console=console)
+    assert rc == 0
+    assert hook.called
+    req = hook.calls.last.request
+    assert req.url.params['key'] == 'bottoken'
+    assert req.headers['x-gitlab-event'] == 'Push Hook'
+    payload = json.loads(req.content)
+    assert payload['object_kind'] == 'push'
+    assert payload['commits'][0]['id'] == 'FULLSHA1'
+    assert 'OP#7190' in payload['commits'][0]['message']
+
+
+async def test_push_without_token_errors(
+    monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
+) -> None:
+    monkeypatch.setenv('OP_API_KEY', 'k')
+    monkeypatch.delenv('OP_GITLAB_WEBHOOK_TOKEN', raising=False)
+    monkeypatch.setattr(
+        'subprocess.run',
+        _fake_git('FULLSHA1\x1fabc1234\x1fFix OP#7190\x1fb\x1e'),
+    )
+    args = _parse_args(['commits', '--push', '--repo', '/tmp'])
+    buf, console = _console()
+    rc = await run(args, config=_config(webhook_token=''), config_path=None, console=console)
+    assert rc == 2
+    assert 'webhook_token' in buf.getvalue()

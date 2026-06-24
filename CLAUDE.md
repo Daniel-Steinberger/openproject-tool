@@ -14,8 +14,10 @@ pytest -x                     # bei erstem Fehler abbrechen
 # TUI starten (interaktiv)
 op -i [query]
 
-# Git-Commits verlinkt ans Work Package (Spike, Branch feature/op-commits)
-op commits [<git-range>] [--dry-run] [--comment]
+# Git-Commits ans Work Package (Spike, Branch feature/op-commits)
+# Liest das Repo aus $PWD (op läuft via `uv --directory` im Tool-Repo!) oder --repo.
+op commits [<range|sha>] [--repo PATH] [--dry-run] [--comment] [--push]
+#   --push: synthetisches GitLab-Push-Event an OpenProject-Webhook ([gitlab] webhook_token)
 
 # Metadaten vom Server laden (befüllt [remote.*] in Config)
 op --load-remote-data

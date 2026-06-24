@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from op.commits import (
     Commit,
+    build_push_payload,
     commit_markdown_line,
     commit_url,
+    git_log_command,
     merge_commit_lines,
     parse_git_log,
     parse_task_refs,
@@ -71,3 +73,26 @@ class TestMerge:
         existing = '- [aaa](https://gitlab.dvs.ag/dvs/dvs/-/commit/aaa111) first'
         merged, added = merge_commit_lines(existing, [c1], BASE, PROJ)
         assert merged == existing and added == []
+
+
+class TestGitLogCommand:
+    def test_range(self) -> None:
+        cmd = git_log_command('HEAD~5..HEAD')
+        assert cmd[:3] == ['git', 'log', 'HEAD~5..HEAD'] and '-1' not in cmd
+
+    def test_single_commit(self) -> None:
+        cmd = git_log_command('44836a9')
+        assert '-1' in cmd and '44836a9' in cmd
+
+
+class TestPushPayload:
+    def test_payload_shape(self) -> None:
+        c = Commit('ec18df40a2', 'ec18df4', 'Fix OP#7190', {7190})
+        p = build_push_payload([c], BASE, PROJ)
+        assert p['object_kind'] == 'push'
+        assert p['project']['web_url'] == 'https://gitlab.dvs.ag/dvs/dvs'
+        assert p['total_commits_count'] == 1
+        commit = p['commits'][0]
+        assert commit['id'] == 'ec18df40a2'
+        assert commit['message'] == 'Fix OP#7190'
+        assert commit['url'] == 'https://gitlab.dvs.ag/dvs/dvs/-/commit/ec18df40a2'

@@ -433,6 +433,24 @@ class OpenProjectClient:
             json={'comment': {'raw': text}},
         )
 
+    async def send_gitlab_push(
+        self, *, webhook_token: str, payload: dict[str, T.Any], secret: str | None = None
+    ) -> tuple[int, str]:
+        """POST a synthetic GitLab 'Push Hook' to OpenProject's integration webhook
+        (`/webhooks/gitlab?key=…`, outside /api/v3). Returns (status_code, body)."""
+        if self._http is None:
+            raise OpenProjectError('client not open')
+        headers = {'X-Gitlab-Event': 'Push Hook'}
+        if secret:
+            headers['X-Gitlab-Token'] = secret
+        resp = await self._http.post(
+            '/webhooks/gitlab',
+            params={'key': webhook_token},
+            json=payload,
+            headers=headers,
+        )
+        return resp.status_code, resp.text
+
     async def get_watchers(self, wp_id: int) -> list[User]:
         elements = await self._get_collection(f'/work_packages/{wp_id}/watchers')
         return [User.from_api(e) for e in elements]

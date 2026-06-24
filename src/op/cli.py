@@ -19,8 +19,9 @@ from rich.text import Text
 from op.actions import load_remote_data
 from op.api import AuthError, OpenProjectClient, OpenProjectError
 from op.commits import (
-    GIT_LOG_FORMAT,
+    build_push_payload,
     commit_markdown_line,
+    git_log_command,
     merge_commit_lines,
     parse_git_log,
 )
@@ -83,14 +84,19 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
     if argv and argv[0] == 'commits':
         cm = argparse.ArgumentParser(prog='op commits')
         cm.add_argument('range', nargs='?', default='HEAD~50..HEAD',
-                        help='git-Range (Default: HEAD~50..HEAD)')
+                        help='git-Range (z.B. HEAD~50..HEAD) ODER ein einzelner Commit (SHA).')
+        cm.add_argument('--repo', default=None,
+                        help='Pfad zum git-Repository (Default: aktuelles Verzeichnis).')
         cm.add_argument('--dry-run', action='store_true', help='Nur anzeigen, nichts schreiben')
         cm.add_argument('--comment', action='store_true',
                         help='Als Kommentar statt ins "Commits"-Custom-Field schreiben')
+        cm.add_argument('--push', action='store_true',
+                        help='Commits als GitLab-Push-Event an die OpenProject-Integration '
+                             'senden (Vorschau ohne echten Webhook). Braucht [gitlab] webhook_token.')
         ns = cm.parse_args(argv[1:])
         return argparse.Namespace(
-            command='commits', commits_range=ns.range,
-            commits_dry_run=ns.dry_run, commits_comment=ns.comment,
+            command='commits', commits_range=ns.range, commits_repo=ns.repo,
+            commits_dry_run=ns.dry_run, commits_comment=ns.comment, commits_push=ns.push,
             load_remote_data=False, interactive=False, query=[],
         )
 
@@ -305,27 +311,34 @@ async def _run_commits(
         return 2
 
     # The "Commits" custom field is only required for a real CF write. Dry-run is
-    # a pure local preview (no API, no field), and --comment writes a comment.
+    # a pure local preview (no API, no field); --comment and --push don't need it.
     cf_id = next(
         (cid for cid, name in config.remote.custom_fields.items()
          if name.strip().lower() == 'commits'),
         None,
     )
-    if not args.commits_dry_run and not args.commits_comment and cf_id is None:
+    needs_cf = not (args.commits_dry_run or args.commits_comment or args.commits_push)
+    if needs_cf and cf_id is None:
         console.print(
             '[red]Kein Custom Field "Commits" gefunden.[/red] In OpenProject als '
             'Langtext-CF anlegen, dann `op --load-remote-data`. Oder `--comment` / '
-            '`--dry-run` nutzen.'
+            '`--push` / `--dry-run` nutzen.'
         )
         return 2
 
+    # `op` is often run via `uv --directory <tool> run op`, which changes the
+    # process cwd to the tool repo. The user's actual directory survives in $PWD.
+    repo = args.commits_repo or os.environ.get('PWD') or os.getcwd()
     try:
         out = subprocess.run(
-            ['git', 'log', args.commits_range, f'--format={GIT_LOG_FORMAT}'],
-            capture_output=True, text=True, check=True,
+            git_log_command(args.commits_range),
+            capture_output=True, text=True, check=True, cwd=repo,
         ).stdout
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-        console.print(f'[red]git log fehlgeschlagen:[/red] {exc}')
+        console.print(
+            f'[red]git log fehlgeschlagen[/red] (repo: [cyan]{repo}[/cyan]): {exc}. '
+            f'Ggf. `--repo <pfad>` angeben.'
+        )
         return 2
 
     commits = parse_git_log(out)
@@ -334,20 +347,53 @@ async def _run_commits(
         for tid in c.task_ids:
             by_task[tid].append(c)
     if not by_task:
-        console.print('Keine Commits mit Task-Referenz (#id / OP#id) im Range gefunden.')
+        console.print(
+            f'Keine Commits mit Task-Referenz (#id / OP#id) gefunden '
+            f'(repo: [cyan]{repo}[/cyan], range: {args.commits_range}).'
+        )
         return 0
 
     base, proj = gl.base_url, gl.project
 
     # Dry-run: pure local preview — no API calls, no field needed.
     if args.commits_dry_run:
-        console.print(f'[dim](dry-run — es wird nichts geschrieben; Range {args.commits_range})[/dim]')
+        console.print(
+            f'[dim](dry-run — es wird nichts geschrieben; repo {repo}, range '
+            f'{args.commits_range})[/dim]'
+        )
         for task_id, task_commits in sorted(by_task.items()):
             console.print(f'[cyan]#{task_id}[/cyan] ({len(task_commits)}):')
             for c in task_commits:
                 # markup=False: the markdown link `[<sha>](…)` must not be eaten by Rich.
                 console.print('  ' + commit_markdown_line(c, base, proj), markup=False)
         return 0
+
+    # --push: send a synthetic GitLab push event to OpenProject's integration
+    # webhook (preview without configuring a real GitLab webhook).
+    if args.commits_push:
+        token = gl.resolved_webhook_token()
+        if not token:
+            console.print(
+                '[red]Kein GitLab-Webhook-Token.[/red] [gitlab] webhook_token in der '
+                'config.toml setzen (oder Env OP_GITLAB_WEBHOOK_TOKEN).'
+            )
+            return 2
+        all_commits = [c for cs in by_task.values() for c in cs]
+        # de-dup by sha, preserve order
+        seen: set[str] = set()
+        unique = [c for c in all_commits if not (c.full_sha in seen or seen.add(c.full_sha))]
+        payload = build_push_payload(unique, base, proj)
+        status, text = await client.send_gitlab_push(
+            webhook_token=token, payload=payload, secret=gl.webhook_secret or None,
+        )
+        if 200 <= status < 300:
+            console.print(
+                f'[green]Push gesendet[/green] ({len(unique)} Commit(s), HTTP {status}). '
+                f'Tasks: {", ".join(f"#{t}" for t in sorted(by_task))}. In OpenProject prüfen.'
+            )
+            return 0
+        console.print(f'[red]Webhook abgelehnt (HTTP {status}):[/red] {text[:300]}')
+        return 1
 
     for task_id, task_commits in sorted(by_task.items()):
         wp = await client.get_work_package(task_id)

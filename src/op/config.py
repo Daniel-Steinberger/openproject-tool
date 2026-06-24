@@ -274,10 +274,17 @@ class LoggingConfig(BaseModel):
 class GitlabConfig(BaseModel):
     base_url: str = ''
     project: str = ''
+    # Bot-User API token for the OpenProject GitLab webhook endpoint (?key=).
+    # Env OP_GITLAB_WEBHOOK_TOKEN takes precedence. Optional secret = X-Gitlab-Token.
+    webhook_token: str = ''
+    webhook_secret: str = ''
 
     @property
     def is_configured(self) -> bool:
         return bool(self.base_url and self.project)
+
+    def resolved_webhook_token(self) -> str:
+        return os.environ.get('OP_GITLAB_WEBHOOK_TOKEN') or self.webhook_token
 
 
 class Config(BaseModel):
