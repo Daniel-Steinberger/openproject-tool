@@ -68,11 +68,24 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
         help='Open the interactive TUI instead of printing results.',
     )
     parser.add_argument(
+        '--config',
+        action='store_true',
+        help=f'Open the config file ({_highlight_path(default_config_path())}) in $EDITOR.',
+    )
+    parser.add_argument(
         'query',
         nargs='*',
         help=_build_query_help(defaults),
     )
     return parser.parse_args(argv)
+
+
+def _highlight_path(path: Path) -> str:
+    """Cyan-highlight a path for --help, but only on a TTY (plain when piped)."""
+    text = str(path)
+    if sys.stdout.isatty():
+        return f'\033[36m{text}\033[0m'
+    return text
 
 
 def _build_query_help(defaults: DefaultsConfig | None) -> str:
@@ -95,6 +108,36 @@ def _build_query_help(defaults: DefaultsConfig | None) -> str:
     return ' '.join(parts)
 
 
+def _open_config_in_editor(path: Path, console: Console) -> int:
+    """Open the config file in $EDITOR (creating it from the template if absent)."""
+    import os
+    import shlex
+    import shutil
+    import subprocess
+
+    if not path.exists():
+        try:
+            load_config(path)  # writes the default template when the file is missing
+        except Exception:  # noqa: BLE001
+            pass
+    editor = (
+        os.environ.get('EDITOR')
+        or os.environ.get('VISUAL')
+        or shutil.which('nano')
+        or shutil.which('vi')
+        or 'vi'
+    )
+    console.print(f'Öffne Config-Datei: [cyan]{path}[/cyan]')
+    try:
+        subprocess.run([*shlex.split(editor), str(path)], check=False)
+    except FileNotFoundError:
+        console.print(
+            f'[yellow]Kein Editor gefunden[/yellow] ($EDITOR nicht gesetzt). '
+            f'Config-Datei: [cyan]{path}[/cyan]'
+        )
+    return 0
+
+
 async def run(
     args: argparse.Namespace,
     *,
@@ -103,6 +146,8 @@ async def run(
     console: Console | None = None,
 ) -> int:
     console = console or Console()
+    if getattr(args, 'config', False):
+        return _open_config_in_editor(config_path or default_config_path(), console)
     if config is None:
         config_path = config_path or default_config_path()
         config = load_config(config_path)

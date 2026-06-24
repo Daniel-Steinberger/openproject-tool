@@ -58,6 +58,34 @@ class TestParseArgs:
         args = _parse_args(['--interactive'])
         assert args.interactive is True
 
+    def test_config_flag(self) -> None:
+        args = _parse_args(['--config'])
+        assert args.config is True
+
+
+class TestConfigFlag:
+    async def test_config_opens_editor_without_api_key(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: T.Any
+    ) -> None:
+        from pathlib import Path
+
+        cfg_path = tmp_path / 'config.toml'
+        cfg_path.write_text('[connection]\nbase_url = "https://x"\n')
+        monkeypatch.delenv('OP_API_KEY', raising=False)
+        monkeypatch.setenv('EDITOR', 'fakeeditor')
+        opened: dict[str, T.Any] = {}
+
+        def _fake_run(cmd, check):  # noqa: ANN001
+            opened['cmd'] = cmd
+
+        monkeypatch.setattr('subprocess.run', _fake_run)
+        args = _parse_args(['--config'])
+        buf, console = _buffered_console()
+        rc = await run(args, config_path=Path(cfg_path), console=console)
+        assert rc == 0
+        assert opened['cmd'] == ['fakeeditor', str(cfg_path)]
+        assert 'config.toml' in buf.getvalue()
+
 
 class TestFormatResultLine:
     def test_contains_id_subject_and_url(self) -> None:
