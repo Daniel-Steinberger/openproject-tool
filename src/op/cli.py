@@ -411,7 +411,14 @@ async def _run_commits(
         if '<html' in body[:2000].lower():
             body = html_to_markdown(body).strip()
         console.print(body or '(leere Antwort)')
-        if status in (401, 403):
+        if status in (301, 302, 303, 307, 308):
+            console.print(
+                '[dim]3xx-Redirect (meist auf /login) = nicht authentifiziert: der `key` '
+                'ist kein gültiges API-Token. WICHTIG: `webhook_token` muss das '
+                'OpenProject-API-Token sein — NICHT das "Webhook Secret" (das gehört in '
+                '`webhook_secret`).[/dim]'
+            )
+        elif status in (401, 403):
             console.print(
                 '[dim]401/403 = der `key` (webhook_token) wurde von DIESER Instanz nicht '
                 'akzeptiert. Prüfen: zeigt --base-url/[connection] auf die richtige Instanz? '
