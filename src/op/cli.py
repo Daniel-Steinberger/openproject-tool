@@ -378,11 +378,14 @@ async def _run_commits(
     # --push: send a synthetic GitLab push event to OpenProject's integration
     # webhook (preview without configuring a real GitLab webhook).
     if args.commits_push:
-        token = gl.resolved_webhook_token()
+        # Webhook key: explicit [gitlab].webhook_token / env, else reuse the normal
+        # connection API key (no separate token needed — that user just has to be
+        # the configured GitLab webhook user in OpenProject).
+        token = gl.resolved_webhook_token() or (config.connection.api_key or '')
         if not token:
             console.print(
-                '[red]Kein GitLab-Webhook-Token.[/red] [gitlab] webhook_token in der '
-                'config.toml setzen (oder Env OP_GITLAB_WEBHOOK_TOKEN).'
+                '[red]Kein API-Token.[/red] [gitlab] webhook_token, Env '
+                'OP_GITLAB_WEBHOOK_TOKEN oder [connection] api_key setzen.'
             )
             return 2
         all_commits = [c for cs in by_task.values() for c in cs]
