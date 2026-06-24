@@ -314,12 +314,16 @@ class MainScreen(Screen[None]):
         if not target_ids:
             return
         single_wp = self._tasks_by_id.get(target_ids[0]) if len(target_ids) == 1 else None
+        target_wps = [
+            self._tasks_by_id[i] for i in target_ids if i in self._tasks_by_id
+        ]
         # Pre-fill with any pending form already queued for this (single) task
         modal = UpdateModal(
             remote=self.config.remote,
             target_count=len(target_ids),
             wp=single_wp,
             client=self.client,
+            target_wps=target_wps,
         )
         if single_wp is not None:
             pending = self._queue().get(single_wp.id)

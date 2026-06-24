@@ -84,6 +84,7 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         target_count: int,
         wp: WorkPackage | None = None,
         client: T.Any | None = None,
+        target_wps: list[WorkPackage] | None = None,
     ) -> None:
         super().__init__()
         self.form = UpdateForm()
@@ -94,6 +95,23 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
         self._client = client
         self._multi_cfs: set[int] = set(remote.custom_field_multi)
         self._today_override: date | None = None
+        # All edited tasks (single or bulk) — used to show the shared current
+        # value behind "— no change —". Falls back to [wp] for single edits.
+        self._target_wps: list[WorkPackage] = (
+            target_wps if target_wps is not None else ([wp] if wp else [])
+        )
+
+    def _shared_label(self, attr: str, *, none_label: str | None = None) -> str | None:
+        """Common display value of `attr` across all edited tasks, or a hint:
+        the shared value if uniform, 'gemischt' if they differ, None if unknown."""
+        wps = self._target_wps
+        if not wps:
+            return None
+        values = {getattr(w, attr) for w in wps}
+        if len(values) != 1:
+            return 'gemischt'
+        value = next(iter(values))
+        return value if value is not None else none_label
 
     def compose(self):  # noqa: ANN201
         with Vertical():
@@ -104,27 +122,27 @@ class UpdateModal(ModalScreen[UpdateForm | None]):
                     yield Label('Status:')
                     yield _make_picker(
                         self._remote.statuses, id='sel-status',
-                        blank_label=wp.status_name if wp else None,
+                        blank_label=self._shared_label('status_name'),
                     )
                     yield Label('Type:')
                     yield _make_picker(
                         self._remote.types, id='sel-type',
-                        blank_label=wp.type_name if wp else None,
+                        blank_label=self._shared_label('type_name'),
                     )
                     yield Label('Priority:')
                     yield _make_picker(
                         self._remote.priorities, id='sel-priority',
-                        blank_label=(wp.priority_name if wp else None),
+                        blank_label=self._shared_label('priority_name'),
                     )
                     yield Label('Project:')
                     yield _make_picker(
                         self._remote.projects, id='sel-project',
-                        blank_label=wp.project_name if wp else None,
+                        blank_label=self._shared_label('project_name'),
                     )
                     yield Label('Assignee:')
                     yield _make_assignee_picker(
                         self._remote.users, self._remote.groups,
-                        blank_label=(wp.assignee_name or 'nicht zugewiesen') if wp else None,
+                        blank_label=self._shared_label('assignee_name', none_label='nicht zugewiesen'),
                     )
                     yield Label('+ Beobachter:')
                     yield _make_picker(self._remote.users, id='sel-add-watcher')
