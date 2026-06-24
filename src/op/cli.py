@@ -43,6 +43,8 @@ def main() -> None:
 _MODES: list[tuple[str, str]] = [
     ('perms [projekt]', 'Berechtigungs-Tool (eigener TUI-Modus): Projekt-/Gruppensicht, '
                         'Übertragen, Hierarchie angleichen, Benutzerverwaltung.'),
+    ('commits [range]', 'Git-Commits (mit OP#<id>/#<id> in der Message) verlinkt ans '
+                        'Work Package schreiben. Optionen: --dry-run, --comment.'),
 ]
 
 
