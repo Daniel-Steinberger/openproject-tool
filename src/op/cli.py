@@ -304,19 +304,22 @@ async def _run_commits(
         )
         return 2
 
-    cf_id: int | None = None
-    if not args.commits_comment:
-        cf_id = next(
-            (cid for cid, name in config.remote.custom_fields.items()
-             if name.strip().lower() == 'commits'),
-            None,
+    from op.commits import commit_markdown_line
+
+    # The "Commits" custom field is only required for a real CF write. Dry-run is
+    # a pure local preview (no API, no field), and --comment writes a comment.
+    cf_id = next(
+        (cid for cid, name in config.remote.custom_fields.items()
+         if name.strip().lower() == 'commits'),
+        None,
+    )
+    if not args.commits_dry_run and not args.commits_comment and cf_id is None:
+        console.print(
+            '[red]Kein Custom Field "Commits" gefunden.[/red] In OpenProject als '
+            'Langtext-CF anlegen, dann `op --load-remote-data`. Oder `--comment` / '
+            '`--dry-run` nutzen.'
         )
-        if cf_id is None:
-            console.print(
-                '[red]Kein Custom Field "Commits" gefunden.[/red] In OpenProject als '
-                'Langtext-CF anlegen, dann `op --load-remote-data`. Oder `--comment` nutzen.'
-            )
-            return 2
+        return 2
 
     try:
         out = subprocess.run(
@@ -337,38 +340,37 @@ async def _run_commits(
         return 0
 
     base, proj = gl.base_url, gl.project
-    rc = 0
+
+    # Dry-run: pure local preview — no API calls, no field needed.
+    if args.commits_dry_run:
+        console.print(f'[dim](dry-run — es wird nichts geschrieben; Range {args.commits_range})[/dim]')
+        for task_id, task_commits in sorted(by_task.items()):
+            console.print(f'[cyan]#{task_id}[/cyan] ({len(task_commits)}):')
+            for c in task_commits:
+                # markup=False: the markdown link `[<sha>](…)` must not be eaten by Rich.
+                console.print('  ' + commit_markdown_line(c, base, proj), markup=False)
+        return 0
+
     for task_id, task_commits in sorted(by_task.items()):
         wp = await client.get_work_package(task_id)
         if wp is None:
             console.print(f'[yellow]#{task_id} nicht gefunden — übersprungen.[/yellow]')
             continue
         if args.commits_comment:
-            from op.commits import commit_markdown_line
-            new = [commit_markdown_line(c, base, proj) for c in task_commits]
-            body = '\n'.join(new)
-            if args.commits_dry_run:
-                console.print(f'[cyan]#{task_id}[/cyan] (Kommentar):\n{body}')
-            else:
-                await client.add_comment(task_id, body)
-                console.print(f'[green]#{task_id}[/green]: {len(new)} Commit(s) als Kommentar.')
+            body = '\n'.join(commit_markdown_line(c, base, proj) for c in task_commits)
+            await client.add_comment(task_id, body)
+            console.print(f'[green]#{task_id}[/green]: {len(task_commits)} Commit(s) als Kommentar.')
             continue
         existing = wp.custom_field_text(cf_id)
         merged, added = merge_commit_lines(existing, task_commits, base, proj)
         if not added:
             console.print(f'#{task_id}: nichts Neues.')
             continue
-        if args.commits_dry_run:
-            console.print(
-                f'[cyan]#{task_id}[/cyan] (+{len(added)}):\n'
-                + '\n'.join(f'  {a.short_sha} {a.subject}' for a in added)
-            )
-        else:
-            await client.set_custom_field_text(
-                task_id, lock_version=wp.lock_version, cf_id=cf_id, markdown=merged
-            )
-            console.print(f'[green]#{task_id}[/green]: {len(added)} neue(r) Commit(s) ergänzt.')
-    return rc
+        await client.set_custom_field_text(
+            task_id, lock_version=wp.lock_version, cf_id=cf_id, markdown=merged
+        )
+        console.print(f'[green]#{task_id}[/green]: {len(added)} neue(r) Commit(s) ergänzt.')
+    return 0
 
 
 def _resolve_project(token: str, config: Config) -> int | None:

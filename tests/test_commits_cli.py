@@ -57,26 +57,26 @@ def _wp_json(cf_raw: str = '') -> dict:
     }
 
 
-async def test_dry_run_groups_and_writes_nothing(
+async def test_dry_run_is_local_preview_without_cf_or_api(
     monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
 ) -> None:
     monkeypatch.setenv('OP_API_KEY', 'k')
     monkeypatch.setattr(
         'subprocess.run',
-        _fake_git(f'FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1fbody\x1e'),
+        _fake_git('FULLSHA1\x1fabc1234\x1fFix login OP#7190\x1fbody\x1e'),
     )
-    wp_route = respx_mock.get(f'{BASE_URL}/api/v3/work_packages/7190').mock(
-        return_value=httpx.Response(200, json=_wp_json())
-    )
+    wp_route = respx_mock.get(f'{BASE_URL}/api/v3/work_packages/7190')
     patch_route = respx_mock.patch(f'{BASE_URL}/api/v3/work_packages/7190')
 
+    # No "Commits" custom field configured → dry-run must still work.
     args = _parse_args(['commits', '--dry-run'])
     buf, console = _console()
-    rc = await run(args, config=_config(), config_path=None, console=console)
+    rc = await run(args, config=_config(with_cf=False), config_path=None, console=console)
     assert rc == 0
-    assert '#7190' in buf.getvalue() and 'abc1234' in buf.getvalue()
-    assert not patch_route.called  # dry-run writes nothing
-    assert wp_route.called
+    out = buf.getvalue()
+    assert '#7190' in out and 'abc1234' in out
+    assert 'gitlab.dvs.ag/dvs/dvs/-/commit/FULLSHA1' in out
+    assert not patch_route.called and not wp_route.called  # no API at all
 
 
 async def test_writes_custom_field(
