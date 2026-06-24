@@ -983,12 +983,13 @@ class TestCurrentValuesAsBlankLabel:
             assert modal.query_one('#sel-assignee', PickerWidget)._label_for(None) == \
                 '— no change — (nicht zugewiesen)'
 
-    async def test_batch_edit_has_no_blank_labels(
+    async def test_batch_edit_shows_shared_value(
         self, app_factory: T.Callable[..., OpApp]
     ) -> None:
+        """When all selected tasks share a value, the bulk dialog shows it."""
         from op.tui.picker_widget import PickerWidget
 
-        app = app_factory()
+        app = app_factory()  # fixture tasks all share status 'Neu', project 'Web'
         async with app.run_test() as pilot:
             await pilot.press('space')
             await pilot.press('down')
@@ -998,7 +999,30 @@ class TestCurrentValuesAsBlankLabel:
             modal = app.screen
             assert isinstance(modal, UpdateModal)
             assert modal.query_one('#sel-status', PickerWidget)._label_for(None) == \
-                '— no change —'
+                '— no change — (Neu)'
+
+    async def test_batch_edit_shows_gemischt_when_values_differ(self) -> None:
+        from op.tui.picker_widget import PickerWidget
+
+        tasks = [
+            _wp(1, 'A'),
+            WorkPackage(
+                id=2, subject='B', type_id=1, type_name='Task',
+                status_id=2, status_name='In Bearbeitung', project_id=10,
+                project_name='Web', lock_version=1,
+            ),
+        ]
+        app = OpApp(tasks=tasks, config=_config(), client=FakeClient())
+        async with app.run_test() as pilot:
+            await pilot.press('space')
+            await pilot.press('down')
+            await pilot.press('space')
+            await pilot.press('u')
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, UpdateModal)
+            assert modal.query_one('#sel-status', PickerWidget)._label_for(None) == \
+                '— no change — (gemischt)'
 
 
 class TestParentSearch:
