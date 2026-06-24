@@ -38,6 +38,22 @@ def main() -> None:
     sys.exit(exit_code or 0)
 
 
+# Sub-modes dispatched by the first positional token (before the query parser).
+# Listed in --help via the epilog since argparse itself doesn't know them.
+_MODES: list[tuple[str, str]] = [
+    ('perms [projekt]', 'Berechtigungs-Tool (eigener TUI-Modus): Projekt-/Gruppensicht, '
+                        'Übertragen, Hierarchie angleichen, Benutzerverwaltung.'),
+]
+
+
+def _modes_epilog() -> str:
+    lines = ['Modi (als erstes Argument statt einer Suchanfrage):']
+    for name, desc in _MODES:
+        lines.append(f'  op {name:18} {desc}')
+    lines.append("\nHilfe zu einem Modus: z. B. `op perms --help`.")
+    return '\n'.join(lines)
+
+
 def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> argparse.Namespace:
     # `op perms [projekt]` is a distinct mode (own TUI), kept separate from the
     # work-package query parser so the positional `query` semantics are unchanged.
@@ -53,6 +69,8 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
     parser = argparse.ArgumentParser(
         prog='op',
         description='Fast, keyboard-driven CLI and TUI for OpenProject.',
+        epilog=_modes_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.set_defaults(command=None)
     parser.add_argument(
