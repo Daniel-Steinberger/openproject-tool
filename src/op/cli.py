@@ -3,6 +3,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
+import shlex
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,6 +22,7 @@ from op.logging_setup import setup_logging
 from op.models import WorkPackage
 from op.search import FILTER_KEYS, build_api_filter_variants, parse
 from op.tui.app import OpApp
+from op.tui.perms_app import PermsApp
 
 
 def main() -> None:
@@ -144,11 +149,6 @@ def _build_query_help(defaults: DefaultsConfig | None) -> str:
 
 def _open_config_in_editor(path: Path, console: Console) -> int:
     """Open the config file in $EDITOR (creating it from the template if absent)."""
-    import os
-    import shlex
-    import shutil
-    import subprocess
-
     if not path.exists():
         try:
             load_config(path)  # writes the default template when the file is missing
@@ -277,8 +277,6 @@ async def _run_perms(
     if args.perms_project and start is None:
         console.print(f'[red]Projekt nicht gefunden:[/red] {args.perms_project!r}')
         return 2
-    from op.tui.perms_app import PermsApp
-
     app = PermsApp(config=config, client=client, start_project=start)
     await app.run_async()
     return 0

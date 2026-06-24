@@ -103,6 +103,7 @@ Zwei Wurzelsichten, umschaltbar mit `v`: **Projektbaum** (`PermsProjectsScreen`,
 ## Entwicklungskonventionen
 
 - **Plan → GitHub-Issue**: Für jeden neuen Plan wird bei dessen Umsetzung automatisch ein GitHub-Issue via `gh issue create` angelegt, das das Vorhaben genauer erklärt und präzisiert (Ziel, Kontext, Umsetzungsschritte), sodass es nachvollziehbar ist. Die Issue-Nummer wird vom Tool vergeben und dem User genannt. Commits und PRs referenzieren dieses Issue (`#<nr>`), damit sich Änderungen später darauf zurückführen lassen.
+- **Imports immer Top-of-File**: Keine Imports mitten in Funktionen. Einzige erlaubte Ausnahme: das Brechen eines **echten zirkulären Imports** (typisch im `tui/`-Paket, wo Screens sich gegenseitig bzw. `op.tui.app` referenzieren). Solche Lazy-Imports sind kommentiert/erkennbar (z.B. `from op.tui.app import AppState` in Screen-Methoden). Stdlib- und nicht-zyklische Projekt-Imports gehören nach oben.
 - **Red-Green-Zyklus**: Commits sind oft als "Phase X Red" (Tests zuerst) + "Phase X Green" (Implementierung) strukturiert.
 - **Async-First**: Alle API-Calls und TUI-Aktionen sind `async/await`. Tests mit `pytest-asyncio`.
 - **Config als Single Source of Truth**: `remote.*`-Daten kommen ausschließlich aus der Config (nach `--load-remote-data`), nicht aus Runtime-API-Calls in der TUI.

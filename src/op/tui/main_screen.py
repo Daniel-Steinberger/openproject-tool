@@ -11,9 +11,12 @@ from textual.widgets import DataTable, Footer, Header
 
 log = logging.getLogger(__name__)
 
-from op.config import Config
+from op.config import Config, update_filter
 from op.models import WorkPackage
+from op.search import SearchQuery, build_api_filter_variants
 from op.tui.detail_screen import DetailScreen
+from op.tui.filter_screen import FilterScreen
+from op.tui.review_screen import ReviewScreen
 from op.tui.selection import Selection
 from op.tui.update_form import UpdateForm
 from op.tui.update_modal import UpdateModal
@@ -205,8 +208,6 @@ class MainScreen(Screen[None]):
 
     def action_open_filter(self) -> None:
         """Open the runtime filter editor; on apply, reload tasks from the API."""
-        from op.search import SearchQuery
-        from op.tui.filter_screen import FilterScreen
 
         current = getattr(self.app, 'current_query', None) or SearchQuery()
 
@@ -219,7 +220,6 @@ class MainScreen(Screen[None]):
 
     async def _reload_with_query(self, query) -> None:  # noqa: ANN001
         """Replace the task list via a fresh API call using the new query."""
-        from op.search import build_api_filter_variants
 
         if self.client is None:
             self.notify('No API client — cannot reload', severity='warning')
@@ -251,7 +251,6 @@ class MainScreen(Screen[None]):
 
     def action_toggle_project_filter(self) -> None:
         """Toggle the project filter on/off and persist the new state."""
-        from op.config import update_filter
 
         new_state = not self.config.filter.project_filter_active
         self.config.filter.project_filter_active = new_state
@@ -294,7 +293,6 @@ class MainScreen(Screen[None]):
             'MainScreen.action_review_queue pushing ReviewScreen client=%s',
             type(self.client).__name__ if self.client is not None else 'None',
         )
-        from op.tui.review_screen import ReviewScreen
 
         self.app.push_screen(
             ReviewScreen(config=self.config, client=self.client)
@@ -357,7 +355,6 @@ class MainScreen(Screen[None]):
         self.app.set_state(AppState.SELECTOR)
 
     def _persist_filter(self) -> None:
-        from op.config import update_filter
 
         path = getattr(self.app, 'config_path', None)
         if path is None:
