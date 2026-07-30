@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from op.api import AuthError, OpenProjectClient, OpenProjectError
+from op.api import AuthError, ConnectionFailedError, OpenProjectClient, OpenProjectError
 
 BASE_URL = 'https://op.example.com'
 API_KEY = 'testkey'
@@ -73,6 +73,36 @@ class TestAuth:
         assert 'GET' in message
         assert '/api/v3/priorities' in message
         assert '404' in message
+
+
+class TestTransportErrors:
+    """Unreachable server / timeouts surface as ConnectionFailedError, not raw httpx."""
+
+    async def test_connect_error_raises_connection_failed(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/statuses').mock(
+            side_effect=httpx.ConnectError('All connection attempts failed')
+        )
+        async with client:
+            with pytest.raises(ConnectionFailedError) as excinfo:
+                await client.get_statuses()
+        message = str(excinfo.value)
+        assert BASE_URL in message
+        assert 'All connection attempts failed' in message
+
+    async def test_timeout_raises_connection_failed(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/statuses').mock(
+            side_effect=httpx.ConnectTimeout('timed out')
+        )
+        async with client:
+            with pytest.raises(ConnectionFailedError):
+                await client.get_statuses()
+
+    async def test_connection_failed_is_openproject_error(self) -> None:
+        assert issubclass(ConnectionFailedError, OpenProjectError)
 
 
 class TestMetadataEndpoints:
