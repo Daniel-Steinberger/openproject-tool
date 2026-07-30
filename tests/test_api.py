@@ -8,7 +8,13 @@ import httpx
 import pytest
 import respx
 
-from op.api import AuthError, ConnectionFailedError, OpenProjectClient, OpenProjectError
+from op.api import (
+    AuthError,
+    ConnectionFailedError,
+    OpenProjectClient,
+    OpenProjectError,
+    ValidationError,
+)
 
 BASE_URL = 'https://op.example.com'
 API_KEY = 'testkey'
@@ -103,6 +109,91 @@ class TestTransportErrors:
 
     async def test_connection_failed_is_openproject_error(self) -> None:
         assert issubclass(ConnectionFailedError, OpenProjectError)
+
+
+def _op_error(message: str, identifier: str = 'PropertyConstraintViolation',
+              attribute: str | None = None) -> dict[str, T.Any]:
+    """A single OpenProject API v3 error object."""
+    payload: dict[str, T.Any] = {
+        '_type': 'Error',
+        'errorIdentifier': f'urn:openproject-org:api:v3:errors:{identifier}',
+        'message': message,
+    }
+    if attribute is not None:
+        payload['_embedded'] = {'details': {'attribute': attribute}}
+    return payload
+
+
+class TestValidationErrors:
+    """422 responses name the offending fields instead of dumping truncated JSON."""
+
+    async def test_multiple_errors_lists_every_field(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.patch(f'{BASE_URL}/api/v3/work_packages/7777').mock(
+            return_value=httpx.Response(422, json={
+                '_type': 'Error',
+                'errorIdentifier': 'urn:openproject-org:api:v3:errors:MultipleErrors',
+                'message': 'Einschränkungen für mehrere Felder wurden verletzt.',
+                '_embedded': {'errors': [
+                    _op_error('Übergeordnete Aufgabe ist ungültig.', attribute='parent'),
+                    _op_error('Feld 26 existiert nicht.', attribute='customField26'),
+                ]},
+            })
+        )
+        async with client:
+            with pytest.raises(ValidationError) as excinfo:
+                await client.update_work_package(7777, lock_version=1, changes={'subject': 'x'})
+        message = str(excinfo.value)
+        assert 'parent' in message
+        assert 'Übergeordnete Aufgabe ist ungültig.' in message
+        assert 'customField26' in message
+        assert 'Feld 26 existiert nicht.' in message
+        assert '_embedded' not in message  # no raw HAL JSON
+        assert excinfo.value.field_errors == [
+            ('parent', 'Übergeordnete Aufgabe ist ungültig.'),
+            ('customField26', 'Feld 26 existiert nicht.'),
+        ]
+
+    async def test_single_error_reports_its_field(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.patch(f'{BASE_URL}/api/v3/work_packages/7777').mock(
+            return_value=httpx.Response(
+                422, json=_op_error('Startdatum ist ungültig.', attribute='startDate')
+            )
+        )
+        async with client:
+            with pytest.raises(ValidationError) as excinfo:
+                await client.update_work_package(7777, lock_version=1, changes={'subject': 'x'})
+        assert excinfo.value.field_errors == [('startDate', 'Startdatum ist ungültig.')]
+        assert 'Startdatum ist ungültig.' in str(excinfo.value)
+
+    async def test_error_without_attribute_keeps_message(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.patch(f'{BASE_URL}/api/v3/work_packages/7777').mock(
+            return_value=httpx.Response(422, json=_op_error('Etwas ist schiefgelaufen.'))
+        )
+        async with client:
+            with pytest.raises(ValidationError) as excinfo:
+                await client.update_work_package(7777, lock_version=1, changes={'subject': 'x'})
+        assert excinfo.value.field_errors == [(None, 'Etwas ist schiefgelaufen.')]
+
+    async def test_validation_error_is_openproject_error(self) -> None:
+        assert issubclass(ValidationError, OpenProjectError)
+
+    async def test_non_json_error_body_is_not_truncated_at_200(
+        self, client: OpenProjectClient, respx_mock: respx.MockRouter
+    ) -> None:
+        body = 'x' * 400
+        respx_mock.get(f'{BASE_URL}/api/v3/statuses').mock(
+            return_value=httpx.Response(500, text=body)
+        )
+        async with client:
+            with pytest.raises(OpenProjectError) as excinfo:
+                await client.get_statuses()
+        assert 'x' * 400 in str(excinfo.value)
 
 
 class TestMetadataEndpoints:
