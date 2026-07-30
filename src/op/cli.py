@@ -13,10 +13,17 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 from rich.console import Console, Group
+from rich.markup import escape
 from rich.text import Text
 
 from op.actions import load_remote_data
-from op.api import AuthError, ConnectionFailedError, OpenProjectClient, OpenProjectError
+from op.api import (
+    AuthError,
+    ConnectionFailedError,
+    OpenProjectClient,
+    OpenProjectError,
+    ValidationError,
+)
 from op.config import Config, DefaultsConfig, default_config_path, get_api_key, load_config
 from op.logging_setup import setup_logging
 from op.models import WorkPackage
@@ -40,8 +47,15 @@ def main() -> None:
     except AuthError as exc:
         Console(stderr=True).print(f'[red]Authentication error:[/red] {exc}')
         exit_code = 2
+    except ValidationError as exc:
+        # Multi-line (one line per rejected field); escaped since field messages
+        # may contain brackets that Rich would treat as markup.
+        Console(stderr=True).print(
+            f'[red]OpenProject lehnt die Änderung ab:[/red]\n{escape(str(exc))}'
+        )
+        exit_code = 1
     except OpenProjectError as exc:
-        Console(stderr=True).print(f'[red]OpenProject API error:[/red] {exc}')
+        Console(stderr=True).print(f'[red]OpenProject API error:[/red] {escape(str(exc))}')
         exit_code = 1
     sys.exit(exit_code or 0)
 

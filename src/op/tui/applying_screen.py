@@ -7,6 +7,7 @@ import typing as T
 
 log = logging.getLogger(__name__)
 
+from rich.markup import escape
 from rich.text import Text
 from textual.binding import Binding
 from textual.screen import Screen
@@ -181,11 +182,19 @@ class ApplyingScreen(Screen[None]):
         return True
 
     def _log_error(self, op) -> None:  # noqa: ANN001
-        """Append a failure line to the error log and reveal it."""
-        log = self.query_one('#applying-errors', RichLog)
-        if 'visible' not in log.classes:
-            log.add_class('visible')
-        log.write(f'[bold red]OP#{op.task_id}[/bold red] [red]{op.error}[/red]')
+        """Append a failure entry to the error log and reveal it.
+
+        Validation errors are multi-line (one line per offending field), so each
+        line is written separately — and escaped, since field messages may
+        contain square brackets that Rich would read as markup.
+        """
+        widget = self.query_one('#applying-errors', RichLog)
+        if 'visible' not in widget.classes:
+            widget.add_class('visible')
+        lines = str(op.error or '').splitlines() or ['']
+        widget.write(f'[bold red]OP#{op.task_id}[/bold red] [red]{escape(lines[0])}[/red]')
+        for line in lines[1:]:
+            widget.write(f'[red]{escape(line)}[/red]')
 
     def _find_main_screen(self):  # noqa: ANN202
         from op.tui.main_screen import MainScreen

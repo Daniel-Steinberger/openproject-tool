@@ -31,6 +31,8 @@ _SCHEMA_PAIR_BATCH = 200  # keep URL below ~4 KB
 # CustomOption field formats whose options are not returned by the schema endpoint
 # but ARE returned by the work-package form endpoint.
 _LIST_CF_FORMATS = frozenset({'customoption', '[]customoption'})
+# Cap for error bodies we cannot parse — generous enough to keep the useful tail.
+_ERROR_BODY_CHARS = 2000
 
 
 class OpenProjectError(Exception):
@@ -43,6 +45,49 @@ class AuthError(OpenProjectError):
 
 class ConnectionFailedError(OpenProjectError):
     """Raised when the server cannot be reached at all (DNS, refused, timeout)."""
+
+
+class ValidationError(OpenProjectError):
+    """Raised when OpenProject rejects a write because of field constraints.
+
+    `field_errors` holds (attribute, message) pairs — attribute is None when the
+    API reports an error that is not tied to a specific field.
+    """
+
+    def __init__(self, message: str, field_errors: list[tuple[str | None, str]]) -> None:
+        super().__init__(message)
+        self.field_errors = field_errors
+
+
+def _error_entry(payload: dict[str, T.Any]) -> tuple[str | None, str] | None:
+    """Extract (attribute, message) from a single OpenProject error object."""
+    message = payload.get('message')
+    if not isinstance(message, str) or not message:
+        return None
+    details = payload.get('_embedded', {}).get('details', {})
+    attribute = details.get('attribute') if isinstance(details, dict) else None
+    return (attribute if isinstance(attribute, str) else None, message)
+
+
+def _parse_field_errors(response: httpx.Response) -> list[tuple[str | None, str]]:
+    """Parse an OpenProject error body into per-field messages.
+
+    Handles both a single error object and `MultipleErrors`, whose individual
+    violations live in `_embedded.errors`. Returns [] for bodies we don't
+    recognise, so callers can fall back to the raw text.
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        return []
+    if not isinstance(payload, dict) or payload.get('_type') != 'Error':
+        return []
+    nested = payload.get('_embedded', {}).get('errors')
+    if isinstance(nested, list) and nested:
+        entries = [_error_entry(e) for e in nested if isinstance(e, dict)]
+        return [e for e in entries if e is not None]
+    entry = _error_entry(payload)
+    return [entry] if entry is not None else []
 
 
 class OpenProjectClient:
@@ -486,8 +531,13 @@ class OpenProjectClient:
                 f'Authentication failed for {method} {_API_BASE}{path} '
                 '— check OP_API_KEY or config api_key'
             )
-        if response.status_code >= 400:
-            raise OpenProjectError(
-                f'{method} {_API_BASE}{path} returned {response.status_code}: '
-                f'{response.text[:200]}'
+        if response.status_code < 400:
+            return
+        where = f'{method} {_API_BASE}{path} returned {response.status_code}'
+        field_errors = _parse_field_errors(response)
+        if field_errors:
+            details = '\n'.join(
+                f'  • {attr}: {msg}' if attr else f'  • {msg}' for attr, msg in field_errors
             )
+            raise ValidationError(f'{where}\n{details}', field_errors)
+        raise OpenProjectError(f'{where}: {response.text[:_ERROR_BODY_CHARS]}')
