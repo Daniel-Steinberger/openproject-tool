@@ -41,6 +41,10 @@ class AuthError(OpenProjectError):
     """Raised when the API rejects our credentials (HTTP 401)."""
 
 
+class ConnectionFailedError(OpenProjectError):
+    """Raised when the server cannot be reached at all (DNS, refused, timeout)."""
+
+
 class OpenProjectClient:
     """Async HTTP client for OpenProject API v3."""
 
@@ -464,7 +468,16 @@ class OpenProjectClient:
     async def _raw_request(self, method: str, path: str, **kwargs: T.Any) -> httpx.Response:
         if self._http is None:
             raise OpenProjectError('Client not opened — use `async with OpenProjectClient(...)`')
-        return await self._http.request(method, f'{_API_BASE}{path}', **kwargs)
+        try:
+            return await self._http.request(method, f'{_API_BASE}{path}', **kwargs)
+        except httpx.TimeoutException as exc:
+            raise ConnectionFailedError(
+                f'Timeout ({self._timeout:g}s) bei {method} {self._base_url}{_API_BASE}{path}: {exc}'
+            ) from exc
+        except httpx.TransportError as exc:
+            raise ConnectionFailedError(
+                f'Server nicht erreichbar — {method} {self._base_url}{_API_BASE}{path}: {exc}'
+            ) from exc
 
     @staticmethod
     def _raise_for_status(response: httpx.Response, method: str, path: str) -> None:

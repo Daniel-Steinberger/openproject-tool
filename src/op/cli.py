@@ -16,7 +16,7 @@ from rich.console import Console, Group
 from rich.text import Text
 
 from op.actions import load_remote_data
-from op.api import AuthError, OpenProjectClient, OpenProjectError
+from op.api import AuthError, ConnectionFailedError, OpenProjectClient, OpenProjectError
 from op.config import Config, DefaultsConfig, default_config_path, get_api_key, load_config
 from op.logging_setup import setup_logging
 from op.models import WorkPackage
@@ -34,6 +34,9 @@ def main() -> None:
     args = _parse_args(sys.argv[1:], defaults=_defaults)
     try:
         exit_code = asyncio.run(run(args))
+    except ConnectionFailedError as exc:
+        Console(stderr=True).print(_connection_error_panel(exc))
+        exit_code = 3
     except AuthError as exc:
         Console(stderr=True).print(f'[red]Authentication error:[/red] {exc}')
         exit_code = 2
@@ -49,6 +52,22 @@ _MODES: list[tuple[str, str]] = [
     ('perms [projekt]', 'Berechtigungs-Tool (eigener TUI-Modus): Projekt-/Gruppensicht, '
                         'Übertragen, Hierarchie angleichen, Benutzerverwaltung.'),
 ]
+
+
+def _connection_error_panel(exc: ConnectionFailedError) -> Group:
+    """Actionable message for an unreachable server (instead of an httpx traceback)."""
+    lines = [
+        Text.from_markup('[red]Keine Verbindung zum OpenProject-Server.[/red]'),
+        Text.from_markup(f'  [dim]{exc}[/dim]'),
+        Text(''),
+        Text.from_markup('Mögliche Ursachen:'),
+        Text.from_markup('  • falsche [bold]base_url[/bold] in der Config — '
+                         'bearbeiten mit [bold]op --config[/bold]'),
+        Text.from_markup(f'    [cyan]{default_config_path()}[/cyan]'),
+        Text.from_markup('  • Server läuft nicht (bei [bold]localhost[/bold]: Instanz gestartet?)'),
+        Text.from_markup('  • kein Netz / VPN nicht verbunden'),
+    ]
+    return Group(*lines)
 
 
 def _modes_epilog() -> str:
