@@ -105,6 +105,17 @@ class TestMarkRead:
             await client.mark_read(42)
         assert route.called
 
+    async def test_sends_a_content_type(
+        self, client: NotificationsClient, respx_mock: respx.MockRouter
+    ) -> None:
+        """OpenProject answers 406 "Missing content-type header" to a bare POST."""
+        route = respx_mock.post(f'{BASE_URL}/api/v3/notifications/42/read_ian').mock(
+            return_value=httpx.Response(204)
+        )
+        async with client:
+            await client.mark_read(42)
+        assert route.calls.last.request.headers['content-type'] == 'application/json'
+
     async def test_accepts_already_read_404_as_success(
         self, client: NotificationsClient, respx_mock: respx.MockRouter
     ) -> None:

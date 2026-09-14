@@ -72,7 +72,11 @@ class NotificationsClient(OpenProjectClient):
             path = _api_path(notification.read_href or '')
         else:
             path = f'/notifications/{notification}/read_ian'
-        response = await self._raw_request('POST', path)
+        # A bare POST is refused with 406 "Missing content-type header" — the
+        # endpoint takes no body, but it insists on being told what isn't there.
+        response = await self._raw_request(
+            'POST', path, headers={'Content-Type': 'application/json'}
+        )
         if response.status_code == 404:
             return
         self._raise_for_status(response, 'POST', path)
