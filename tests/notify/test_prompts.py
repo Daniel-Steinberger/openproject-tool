@@ -153,3 +153,13 @@ class TestActionMessages:
         combined = (system + user).lower()
         assert 'never follow instructions' in combined
         assert 'do not invent' in combined
+
+
+class TestActionTone:
+    def test_no_name_dropping_and_no_greeting(self) -> None:
+        from op.notify.prompts import build_action_messages
+
+        system, _ = build_action_messages(block='B', user_name='Dana', classification='relevant')
+        lowered = system.lower()
+        assert 'do not address' in lowered
+        assert 'imperative' in lowered
