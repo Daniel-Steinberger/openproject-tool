@@ -174,3 +174,19 @@ class TestWorkPackageResponsible:
         assert wp is not None
         assert wp.responsible_id == 7
         assert wp.responsible_name == 'Dana Muster'
+
+
+class TestGetMe:
+    async def test_returns_id_and_display_name(
+        self, client: NotificationsClient, respx_mock: respx.MockRouter
+    ) -> None:
+        respx_mock.get(f'{BASE_URL}/api/v3/users/me').mock(
+            return_value=httpx.Response(200, json={
+                'id': 7, 'firstName': 'Dana', 'lastName': 'Muster',
+                'name': 'Dana Muster', 'login': 'dana',
+            })
+        )
+        async with client:
+            user_id, name = await client.get_me()
+        assert user_id == 7
+        assert name == 'Dana Muster'
