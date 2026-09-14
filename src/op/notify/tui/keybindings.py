@@ -32,9 +32,12 @@ def apply_to_notify_screens(config: Config) -> None:
 
     de = kb.notify_detail
     _set_bindings(NotifyDetailScreen, [
-        Binding(de.close, 'close', 'Zurück', show=True),
-        Binding('escape', 'close', 'Zurück', show=False),
+        Binding(de.mark, 'toggle_mark', 'Gelesen', show=True),
+        Binding(de.prev, 'previous', 'Zurück', show=True),
+        Binding(de.next, 'next', 'Weiter', show=True),
         Binding(de.open, 'open_browser', 'Browser', show=True),
+        Binding(de.close, 'close', 'Liste', show=True),
+        Binding('escape', 'close', 'Liste', show=False),
     ])
 
     rv = kb.review

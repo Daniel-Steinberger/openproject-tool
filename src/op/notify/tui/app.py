@@ -45,6 +45,8 @@ class NotifyApp(App[None]):
         self.client = client
         self.analyses = sort_analyses(analyses)
         self.queue = MarkQueue()
+        # Where the detail view last stood — the list cursor follows it back.
+        self.detail_index: int | None = None
 
     def on_mount(self) -> None:
         from op.notify.tui.keybindings import apply_to_notify_screens

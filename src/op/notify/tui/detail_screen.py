@@ -1,4 +1,11 @@
-"""Detail view: the model's summary above the activity log it was made from."""
+"""Detail view: the model's summary above the activity log it was made from.
+
+The screen navigates the inbox itself (`n`/`p`) instead of sending the reader
+back to the list for every work package, and `m` toggles the "mark as read"
+selection right here. Toggling works against the queue, not the server: there is
+no documented way back to *unread*, so nothing is written until the review
+screen applies it.
+"""
 
 from __future__ import annotations
 
@@ -13,14 +20,23 @@ from op.notify.analysis import GroupAnalysis
 
 class NotifyDetailScreen(Screen[None]):
     BINDINGS = [
-        Binding('q', 'close', 'Zurück', show=True),
-        Binding('escape', 'close', 'Zurück', show=False),
+        Binding('m', 'toggle_mark', 'Gelesen', show=True),
+        Binding('p', 'previous', 'Zurück', show=True),
+        Binding('n', 'next', 'Weiter', show=True),
         Binding('o', 'open_browser', 'Browser', show=True),
+        Binding('q', 'close', 'Liste', show=True),
+        Binding('escape', 'close', 'Liste', show=False),
     ]
 
-    def __init__(self, analysis: GroupAnalysis) -> None:
+    def __init__(self, index: int) -> None:
         super().__init__()
-        self.analysis = analysis
+        self.index = index
+
+    @property
+    def analysis(self) -> GroupAnalysis | None:
+        if 0 <= self.index < len(self.app.analyses):
+            return self.app.analyses[self.index]
+        return None
 
     def compose(self):  # noqa: ANN201
         yield Header()
@@ -28,14 +44,17 @@ class NotifyDetailScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.app.sub_title = f'#{self.analysis.work_package_id} — {self.analysis.title}'
+        self._update_subtitle()
 
     def _document(self) -> str:
         a = self.analysis
+        if a is None:
+            return '(kein Eintrag)'
         parts = [f'# #{a.work_package_id} — {a.title}', '']
-        if a.project_name:
-            parts.append(f'*{a.project_name}* · {a.count} Benachrichtigung(en)')
-            parts.append('')
+        meta = [a.project_name, f'{a.count} Benachrichtigung(en)']
+        if self._is_marked():
+            meta.append('**als gelesen vorgemerkt**')
+        parts.extend([' · '.join(m for m in meta if m), ''])
         if a.error:
             parts.extend([f'> **Analyse fehlgeschlagen:** {a.error}', ''])
         if a.summary:
@@ -50,11 +69,54 @@ class NotifyDetailScreen(Screen[None]):
         parts.extend(['## Aktivitäten', '', a.block or '(kein Aktivitätsblock)'])
         return '\n'.join(parts)
 
+    def _is_marked(self) -> bool:
+        a = self.analysis
+        return a is not None and self.app.queue.contains(a.work_package_id)
+
+    def _refresh(self) -> None:
+        self.query_one('#notify-detail', Markdown).update(self._document())
+        self._update_subtitle()
+
+    def _update_subtitle(self) -> None:
+        a = self.analysis
+        if a is None:
+            return
+        position = f'{self.index + 1}/{len(self.app.analyses)}'
+        marked = ' · vorgemerkt' if self._is_marked() else ''
+        self.app.sub_title = f'#{a.work_package_id} — {a.title} ({position}){marked}'
+
+    # --- actions ---------------------------------------------------------
+
+    def action_toggle_mark(self) -> None:
+        a = self.analysis
+        if a is None:
+            return
+        if self.app.queue.contains(a.work_package_id):
+            self.app.queue.remove(a.work_package_id)
+        else:
+            self.app.queue.add(a)
+        self._refresh()
+
+    def action_next(self) -> None:
+        self._move(1)
+
+    def action_previous(self) -> None:
+        self._move(-1)
+
+    def _move(self, step: int) -> None:
+        target = self.index + step
+        if not 0 <= target < len(self.app.analyses):
+            return  # stop at the ends rather than wrapping around
+        self.index = target
+        self.app.detail_index = target
+        self._refresh()
+
     def action_close(self) -> None:
         self.app.pop_screen()
 
     def action_open_browser(self) -> None:
-        if self.analysis.work_package_id is None:
+        a = self.analysis
+        if a is None or a.work_package_id is None:
             return
         base = self.app.config.connection.base_url.rstrip('/')
-        webbrowser.open(f'{base}/work_packages/{self.analysis.work_package_id}')
+        webbrowser.open(f'{base}/work_packages/{a.work_package_id}')

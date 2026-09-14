@@ -47,7 +47,14 @@ class NotifyListScreen(Screen[None]):
 
     def on_screen_resume(self) -> None:
         # Coming back from review/applying: what was marked is gone by then.
+        # Coming back from the detail view: follow wherever n/p ended up.
+        index = self.app.detail_index
+        self.app.detail_index = None
         self.populate()
+        if index is not None:
+            table = self.query_one('#notify-list', DataTable)
+            if table.row_count:
+                table.move_cursor(row=min(index, table.row_count - 1))
 
     def populate(self) -> None:
         table = self.query_one('#notify-list', DataTable)
@@ -144,6 +151,7 @@ class NotifyListScreen(Screen[None]):
     def on_data_table_row_selected(self, _: DataTable.RowSelected) -> None:
         from op.notify.tui.detail_screen import NotifyDetailScreen
 
-        analysis = self.current()
-        if analysis is not None:
-            self.app.push_screen(NotifyDetailScreen(analysis))
+        table = self.query_one('#notify-list', DataTable)
+        if table.cursor_row is None or table.cursor_row >= len(self.app.analyses):
+            return
+        self.app.push_screen(NotifyDetailScreen(table.cursor_row))

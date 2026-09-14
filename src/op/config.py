@@ -271,6 +271,9 @@ class NotifyListKeybindings(BaseModel):
 class NotifyDetailKeybindings(BaseModel):
     close: KeyStr = 'q'
     open: KeyStr = 'o'
+    mark: KeyStr = 'm'
+    next: KeyStr = 'n'
+    prev: KeyStr = 'p'
 
 
 class ApplyingKeybindings(BaseModel):
@@ -577,6 +580,9 @@ _KB_COMMENTS: dict[str, dict[str, str]] = {
     'notify_detail': {
         'close': '',
         'open': 'open work package in browser',
+        'mark': 'toggle "mark as read" for this work package',
+        'next': 'next work package',
+        'prev': 'previous work package',
     },
     'ignore_list': {
         'unignore': 'remove task from ignore list',

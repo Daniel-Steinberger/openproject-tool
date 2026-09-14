@@ -184,8 +184,18 @@ opn …                            # Kurzform desselben Modus
 ```
 
 TUI-Tasten (aus `[keybindings.notify_list]` / `[keybindings.notify_detail]`, Review und Applying
-teilen sich die Sektionen mit `op`): `space` markieren, `i` invertieren, `c` alles Rauschen,
-`a` alles, `Enter` Detail, `g` Review → `g` anwenden, `o` Browser, `q` zurück/beenden.
+teilen sich die Sektionen mit `op`):
+
+| Screen | Tasten |
+|---|---|
+| Liste | `space` markieren, `i` invertieren, `c` alles Rauschen, `a` alles, `Enter` Detail, `g` Review, `o` Browser, `q` beenden |
+| Detail | `m` als gelesen vormerken (toggelt), `n` / `p` nächstes / vorheriges Work Package, `o` Browser, `q` zurück zur Liste |
+| Review | `d` entfernen, `g` anwenden, `q` zurück |
+
+Das Detail ist damit ein eigener Durchgang durch die Inbox: `n` weiter, `m` wenn erledigt, ohne
+zwischendurch in die Liste zurückzuspringen. **`m` toggelt die Vormerkung, nicht den
+Server-Zustand** — es gibt keinen belegten Weg zurück auf *ungelesen*, geschrieben wird erst beim
+Anwenden. Der Listen-Cursor folgt beim Zurückkehren dorthin, wo `n`/`p` stehengeblieben sind.
 
 #### Config
 
