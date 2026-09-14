@@ -55,7 +55,7 @@ class TestListScreen:
         app = app_factory()
         async with app.run_test() as pilot:
             await pilot.pause()
-            table = app.query_one('#notify-list', DataTable)
+            table = app.screen.query_one('#notify-list', DataTable)
             assert table.row_count == 3
             first = table.get_row_at(0)
             assert '200' in str(first[1])
@@ -88,7 +88,7 @@ class TestListScreen:
         app = app_factory()
         async with app.run_test() as pilot:
             await pilot.pause()
-            table = app.query_one('#notify-list', DataTable)
+            table = app.screen.query_one('#notify-list', DataTable)
             rendered = ' '.join(str(cell) for row in range(table.row_count)
                                 for cell in table.get_row_at(row))
             assert 'Antwort geben' in rendered or '1' in rendered
@@ -101,7 +101,7 @@ class TestDetailScreen:
             await pilot.pause()
             await pilot.press('enter')
             await pilot.pause()
-            markdown = app.query_one('#notify-detail', Markdown)
+            markdown = app.screen.query_one('#notify-detail', Markdown)
             source = markdown._markdown or ''
             assert 'Zusammenfassung 200' in source
             assert 'ROHBLOCK 200' in source
@@ -114,7 +114,7 @@ class TestDetailScreen:
             await pilot.pause()
             await pilot.press('q')
             await pilot.pause()
-            assert app.query_one('#notify-list', DataTable)
+            assert app.screen.query_one('#notify-list', DataTable)
 
 
 class TestReviewAndApply:
@@ -125,7 +125,7 @@ class TestReviewAndApply:
             await pilot.press('c')
             await pilot.press('g')
             await pilot.pause()
-            table = app.query_one('#notify-review', DataTable)
+            table = app.screen.query_one('#notify-review', DataTable)
             assert table.row_count == 1
 
     async def test_review_d_removes_an_entry(self, app_factory) -> None:  # noqa: ANN001
@@ -169,7 +169,7 @@ class TestReviewAndApply:
                     break
             await pilot.press('q')
             await pilot.pause()
-            assert app.query_one('#notify-list', DataTable).row_count == 2
+            assert app.screen.query_one('#notify-list', DataTable).row_count == 2
 
 
 class TestKeybindings:

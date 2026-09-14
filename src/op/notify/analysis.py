@@ -44,6 +44,9 @@ class GroupAnalysis(BaseModel):
     latest: str | None = None
     cached: bool = False
     error: str | None = None
+    # The rendered activity block the analysis was made from — shown in the TUI
+    # detail view so the summary can be checked against its source.
+    block: str = ''
 
     @property
     def is_churn(self) -> bool:
@@ -87,6 +90,27 @@ async def analyse_groups(
         for group in groups
     ))
     return list(results)
+
+
+async def render_blocks(
+    groups: list[NotificationGroup],
+    *,
+    op: _OpLike,
+    own_user_id: int | None = None,
+    hide_own: bool = True,
+    user_names: dict[int, str] | None = None,
+) -> dict[int, str]:
+    """Activity blocks without any model involved — used by `--no-llm`."""
+    blocks = await asyncio.gather(*(
+        _render(group, op=op, own_user_id=own_user_id, hide_own=hide_own,
+                user_names=user_names or {})
+        for group in groups
+    ))
+    return {
+        group.work_package_id: block
+        for group, block in zip(groups, blocks, strict=True)
+        if group.work_package_id is not None
+    }
 
 
 async def build_report(
@@ -134,17 +158,17 @@ async def _analyse_one(
 
     cached = cache.get(key)
     if cached is not None:
-        return _to_analysis(group, cached, cached_hit=True)
+        return _to_analysis(group, cached, cached_hit=True, block=block)
 
     try:
         answer = await llm.complete_json(system=system, user=user, schema=GROUP_SCHEMA)
     except LlmError as exc:
         log.warning('analysis failed for work package %s: %s', group.work_package_id, exc)
-        return _failed(group, str(exc))
+        return _failed(group, str(exc), block=block)
 
     # Only successful answers are cached — a failure must be retried next run.
     cache.set(key, answer)
-    return _to_analysis(group, answer, cached_hit=False)
+    return _to_analysis(group, answer, cached_hit=False, block=block)
 
 
 async def _render(
@@ -169,7 +193,7 @@ async def _render(
 
 
 def _to_analysis(
-    group: NotificationGroup, answer: dict[str, T.Any], *, cached_hit: bool
+    group: NotificationGroup, answer: dict[str, T.Any], *, cached_hit: bool, block: str = ''
 ) -> GroupAnalysis:
     classification = answer.get('classification')
     if classification not in CLASSIFICATIONS:
@@ -188,10 +212,11 @@ def _to_analysis(
         count=group.count,
         latest=group.latest,
         cached=cached_hit,
+        block=block,
     )
 
 
-def _failed(group: NotificationGroup, message: str) -> GroupAnalysis:
+def _failed(group: NotificationGroup, message: str, *, block: str = '') -> GroupAnalysis:
     return GroupAnalysis(
         work_package_id=group.work_package_id,
         title=group.title,
@@ -202,4 +227,5 @@ def _failed(group: NotificationGroup, message: str) -> GroupAnalysis:
         count=group.count,
         latest=group.latest,
         error=message,
+        block=block,
     )

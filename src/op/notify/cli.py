@@ -19,13 +19,14 @@ from rich.table import Table
 from op.api import ConnectionFailedError, OpenProjectError
 from op.config import Config, default_config_path, get_api_key, get_llm_api_key, load_config
 from op.logging_setup import setup_logging
-from op.notify.analysis import GroupAnalysis, analyse_groups, build_report
+from op.notify.analysis import GroupAnalysis, analyse_groups, build_report, render_blocks
 from op.notify.api import NotificationsClient
 from op.notify.cache import AnalysisCache
 from op.notify.grouping import group_by_work_package
 from op.notify.llm import LlmClient, LlmError, LlmUnavailableError
 from op.notify.mark import MarkQueue, select_analyses
 from op.notify.models import NotificationGroup
+from op.notify.tui.app import NotifyApp
 
 log = logging.getLogger('op.notify.cli')
 
@@ -97,8 +98,17 @@ async def run_notify(
                 return 0
 
             if args.no_llm:
-                console.print(_raw_table(groups))
-                analyses = [_unanalysed(group) for group in groups]
+                blocks = await render_blocks(
+                    groups, op=client, own_user_id=own_user_id,
+                    hide_own=config.notifications.hide_own_activities,
+                    user_names=_user_names(groups, config),
+                )
+                analyses = [
+                    _unanalysed(group, blocks.get(group.work_package_id or -1, ''))
+                    for group in groups
+                ]
+                if not args.interactive:
+                    console.print(_raw_table(groups))
             else:
                 try:
                     analyses, report = await _analyse(
@@ -115,8 +125,14 @@ async def run_notify(
                 except _NoModelConfigured as exc:
                     console.print(str(exc))
                     return 2
-                console.print(Markdown(report))
-                console.print(_overview(analyses))
+                if not args.interactive:
+                    console.print(Markdown(report))
+                    console.print(_overview(analyses))
+
+            if args.interactive:
+                app = NotifyApp(config=config, client=client, analyses=analyses)
+                await app.run_async()
+                return 0
 
             if wants_marking:
                 return await _mark(args, analyses, client, console)
@@ -273,7 +289,7 @@ def _sorted(analyses: list[GroupAnalysis]) -> list[GroupAnalysis]:
     )
 
 
-def _unanalysed(group: NotificationGroup) -> GroupAnalysis:
+def _unanalysed(group: NotificationGroup, block: str = '') -> GroupAnalysis:
     """Stand-in used with --no-llm so marking works the same way."""
     return GroupAnalysis(
         work_package_id=group.work_package_id,
@@ -284,6 +300,7 @@ def _unanalysed(group: NotificationGroup) -> GroupAnalysis:
         project_name=group.project_name,
         count=group.count,
         latest=group.latest,
+        block=block,
     )
 
 

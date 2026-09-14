@@ -329,3 +329,54 @@ class TestOverviewTable:
         assert '8202' in out
         assert 'relevant' in out
         assert '✓' in out
+
+
+class TestInteractive:
+    async def test_starts_the_tui_with_the_analyses(
+        self, respx_mock: respx.MockRouter, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import op.notify.cli as notify_cli
+
+        _mock_openproject(respx_mock)
+        _mock_llm(respx_mock)
+        started: list[T.Any] = []
+
+        class FakeApp:
+            def __init__(self, *, config, client, analyses) -> None:
+                started.append(analyses)
+
+            async def run_async(self) -> None:
+                return None
+
+        monkeypatch.setattr(notify_cli, 'NotifyApp', FakeApp)
+        console, _ = _console()
+        code = await run_notify(
+            parse_notify_args(['-i']), config=_config(tmp_path), console=console
+        )
+        assert code == 0
+        assert len(started) == 1
+        assert {a.work_package_id for a in started[0]} == {100, 200}
+
+    async def test_without_llm_the_tui_still_shows_the_activity_block(
+        self, respx_mock: respx.MockRouter, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import op.notify.cli as notify_cli
+
+        _mock_openproject(respx_mock)
+        started: list[T.Any] = []
+
+        class FakeApp:
+            def __init__(self, *, config, client, analyses) -> None:
+                started.append(analyses)
+
+            async def run_async(self) -> None:
+                return None
+
+        monkeypatch.setattr(notify_cli, 'NotifyApp', FakeApp)
+        console, _ = _console()
+        code = await run_notify(
+            parse_notify_args(['-i', '--no-llm']), config=_config(tmp_path), console=console
+        )
+        assert code == 0
+        blocks = [a.block for a in started[0]]
+        assert any('Bitte einmal anschauen' in (b or '') for b in blocks)
