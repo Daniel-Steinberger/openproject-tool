@@ -579,3 +579,19 @@ class TestLlmThinkingOption:
         path = tmp_path / 'config.toml'
         load_config(path)
         assert 'disable_thinking' in path.read_text()
+
+
+class TestNotifyDetailKeybindings:
+    def test_mark_and_navigation_defaults(self) -> None:
+        kb = KeybindingsConfig()
+        assert kb.notify_detail.mark == 'm'
+        assert kb.notify_detail.next == 'n'
+        assert kb.notify_detail.prev == 'p'
+
+    def test_keys_appear_in_the_migrated_config(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        cfg = load_config(path)
+        content = path.read_text()
+        assert 'mark' in content
+        assert cfg.keybindings.notify_detail.mark == 'm'

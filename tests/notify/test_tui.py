@@ -187,3 +187,128 @@ class TestKeybindings:
             await pilot.pause()
             await pilot.press('x')
             assert app.queue.count == 3
+
+
+class TestDetailMarking:
+    async def test_m_marks_the_current_work_package(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('m')
+            await pilot.pause()
+            assert app.queue.notification_ids == [3]  # the relevant group, sorted first
+
+    async def test_m_toggles_while_staying_on_the_work_package(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('m')
+            await pilot.press('m')
+            await pilot.pause()
+            assert app.queue.count == 0
+
+    async def test_detail_shows_whether_it_is_marked(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            before = app.screen.query_one('#notify-detail', Markdown)._markdown or ''
+            await pilot.press('m')
+            await pilot.pause()
+            after = app.screen.query_one('#notify-detail', Markdown)._markdown or ''
+            assert before != after
+            assert 'gelesen' in after
+
+    async def test_marking_in_detail_shows_up_in_the_list(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('m')
+            await pilot.press('q')
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            assert '✓' in str(table.get_row_at(0)[0])
+
+
+class TestDetailNavigation:
+    async def test_n_moves_to_the_next_work_package(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('n')
+            await pilot.pause()
+            source = app.screen.query_one('#notify-detail', Markdown)._markdown or ''
+            assert 'Vorgang 300' in source  # relevant(200) → worth_knowing(300)
+
+    async def test_p_moves_back(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('n')
+            await pilot.press('p')
+            await pilot.pause()
+            source = app.screen.query_one('#notify-detail', Markdown)._markdown or ''
+            assert 'Vorgang 200' in source
+
+    async def test_navigation_stops_at_the_ends(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('p')  # already on the first one
+            await pilot.pause()
+            source = app.screen.query_one('#notify-detail', Markdown)._markdown or ''
+            assert 'Vorgang 200' in source
+            for _ in range(5):
+                await pilot.press('n')
+            await pilot.pause()
+            source = app.screen.query_one('#notify-detail', Markdown)._markdown or ''
+            assert 'Vorgang 100' in source  # churn, last in the sort order
+
+    async def test_position_is_visible(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            assert '1/3' in app.sub_title
+            await pilot.press('n')
+            await pilot.pause()
+            assert '2/3' in app.sub_title
+
+    async def test_list_cursor_follows_the_detail_navigation(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('n')
+            await pilot.press('q')
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            assert table.cursor_row == 1
+
+    async def test_marking_then_navigating_keeps_both_marks(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('m')
+            await pilot.press('n')
+            await pilot.pause()
+            await pilot.press('m')
+            await pilot.pause()
+            assert app.queue.count == 2
