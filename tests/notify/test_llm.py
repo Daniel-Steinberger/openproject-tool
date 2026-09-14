@@ -182,3 +182,64 @@ class TestParallelism:
                 client.complete_json(system='S', user=f'U{i}', schema=SCHEMA) for i in range(6)
             ))
         assert peak <= 2
+
+
+class TestReasoningModels:
+    async def test_thinking_not_disabled_by_default(
+        self, client: LlmClient, respx_mock: respx.MockRouter
+    ) -> None:
+        route = respx_mock.post(f'{BASE}/chat/completions').mock(
+            return_value=httpx.Response(200, json=_chat_response('{"classification": "churn"}'))
+        )
+        async with client:
+            await client.complete_json(system='S', user='U', schema=SCHEMA)
+        assert 'chat_template_kwargs' not in json.loads(route.calls.last.request.content)
+
+    async def test_disable_thinking_is_sent(self, respx_mock: respx.MockRouter) -> None:
+        route = respx_mock.post(f'{BASE}/chat/completions').mock(
+            return_value=httpx.Response(200, json=_chat_response('{"classification": "churn"}'))
+        )
+        async with LlmClient(base_url=BASE, model='m', disable_thinking=True) as client:
+            await client.complete_json(system='S', user='U', schema=SCHEMA)
+        body = json.loads(route.calls.last.request.content)
+        assert body['chat_template_kwargs'] == {'enable_thinking': False}
+
+    async def test_budget_exhausted_by_reasoning_is_explained(
+        self, client: LlmClient, respx_mock: respx.MockRouter
+    ) -> None:
+        """A reasoning model can burn the whole budget before writing an answer."""
+        payload = {
+            'choices': [{
+                'index': 0,
+                'finish_reason': 'length',
+                'message': {'role': 'assistant', 'content': '',
+                            'reasoning_content': 'denkt und denkt und denkt'},
+            }],
+        }
+        respx_mock.post(f'{BASE}/chat/completions').mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        async with client:
+            with pytest.raises(LlmError) as excinfo:
+                await client.complete_json(system='S', user='U', schema=SCHEMA)
+        message = str(excinfo.value).lower()
+        assert 'max_tokens' in message
+        assert 'disable_thinking' in message
+
+    async def test_truncated_answer_without_reasoning_is_reported_as_such(
+        self, client: LlmClient, respx_mock: respx.MockRouter
+    ) -> None:
+        payload = {
+            'choices': [{
+                'index': 0,
+                'finish_reason': 'length',
+                'message': {'role': 'assistant', 'content': '{"classification": "chu'},
+            }],
+        }
+        respx_mock.post(f'{BASE}/chat/completions').mock(
+            return_value=httpx.Response(200, json=payload)
+        )
+        async with client:
+            with pytest.raises(LlmError) as excinfo:
+                await client.complete_json(system='S', user='U', schema=SCHEMA)
+        assert 'max_tokens' in str(excinfo.value).lower()

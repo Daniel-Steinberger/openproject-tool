@@ -562,3 +562,20 @@ class TestNotifyKeybindings:
     def test_caret_notation_supported(self) -> None:
         kb = KeybindingsConfig.model_validate({'notify_list': {'apply': '^g'}})
         assert kb.notify_list.apply == 'ctrl+g'
+
+
+class TestLlmThinkingOption:
+    def test_disable_thinking_defaults_to_false(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        assert load_config(path).llm.disable_thinking is False
+
+    def test_disable_thinking_can_be_enabled(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n\n[llm]\ndisable_thinking = true\n')
+        assert load_config(path).llm.disable_thinking is True
+
+    def test_template_documents_the_option(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        load_config(path)
+        assert 'disable_thinking' in path.read_text()

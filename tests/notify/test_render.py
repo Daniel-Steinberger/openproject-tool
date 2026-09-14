@@ -147,3 +147,44 @@ class TestRenderGroup:
         text = render_group(_group(activity_ids=[100]), None, [_activity(100, comment='da')])
         assert 'da' in text
         assert '#8202' in text
+
+
+class TestUserNameResolution:
+    def test_falls_back_to_supplied_name_map(self) -> None:
+        """Activity user links carry no title on every instance — only an href."""
+        activity = Activity.from_api({
+            'id': 100,
+            'createdAt': '2026-09-10T10:00:00Z',
+            'comment': {'raw': 'ein Kommentar'},
+            'details': [],
+            '_links': {'user': {'href': '/api/v3/users/72'}},  # no title
+        })
+        text = render_group(
+            _group(activity_ids=[100]), _work_package(), [activity],
+            user_names={72: 'Adam Achter'},
+        )
+        assert 'Adam Achter' in text
+
+    def test_activity_title_wins_over_map(self) -> None:
+        activity = Activity.from_api({
+            'id': 100,
+            'createdAt': '2026-09-10T10:00:00Z',
+            'comment': {'raw': 'x'},
+            'details': [],
+            '_links': {'user': {'href': '/api/v3/users/72', 'title': 'Echter Name'}},
+        })
+        text = render_group(
+            _group(activity_ids=[100]), _work_package(), [activity],
+            user_names={72: 'Falscher Name'},
+        )
+        assert 'Echter Name' in text
+        assert 'Falscher Name' not in text
+
+    def test_unknown_user_stays_anonymous(self) -> None:
+        activity = Activity.from_api({
+            'id': 100, 'createdAt': '2026-09-10T10:00:00Z',
+            'comment': {'raw': 'x'}, 'details': [],
+            '_links': {'user': {'href': '/api/v3/users/99'}},
+        })
+        text = render_group(_group(activity_ids=[100]), _work_package(), [activity])
+        assert '] ?' in text
