@@ -25,9 +25,15 @@ model = ""
 # api_key = "your-llm-api-key"
 
 # temperature = 0.2       # low on purpose: this is classification, not prose
-# max_tokens = 1500       # per work package summary
+# max_tokens = 3000       # per work package summary
 # parallel = 4            # concurrent requests to the LLM
 # timeout = 180.0         # seconds per request
+
+# Reasoning models spend the token budget on thinking before they answer, which
+# is wasted here — the task is classification, not puzzle solving. This sends
+# chat_template_kwargs.enable_thinking = false, understood by llama.cpp and
+# vLLM. If your answers come back empty with finish_reason "length", set it.
+# disable_thinking = false
 
 
 """
@@ -334,9 +340,10 @@ class LlmConfig(BaseModel):
     model: str = ''
     api_key: str | None = None
     temperature: float = 0.2
-    max_tokens: int = 1500
+    max_tokens: int = 3000
     parallel: int = 4
     timeout: float = 180.0
+    disable_thinking: bool = False
 
     @field_validator('base_url')
     @classmethod

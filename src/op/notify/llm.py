@@ -38,6 +38,7 @@ class LlmClient:
         max_tokens: int = 1500,
         timeout: float = 180.0,
         parallel: int = 4,
+        disable_thinking: bool = False,
     ) -> None:
         self._base_url = base_url.rstrip('/')
         self._model = model
@@ -46,6 +47,7 @@ class LlmClient:
         self._max_tokens = max_tokens
         self._timeout = timeout
         self._parallel = max(1, parallel)
+        self._disable_thinking = disable_thinking
         self._http: httpx.AsyncClient | None = None
         self._slots: asyncio.Semaphore | None = None
 
@@ -108,7 +110,7 @@ class LlmClient:
     # --- internals --------------------------------------------------------
 
     def _payload(self, system: str, user: str) -> dict[str, T.Any]:
-        return {
+        payload: dict[str, T.Any] = {
             'model': self._model,
             'temperature': self._temperature,
             'max_tokens': self._max_tokens,
@@ -117,6 +119,11 @@ class LlmClient:
                 {'role': 'user', 'content': user},
             ],
         }
+        if self._disable_thinking:
+            # Understood by llama.cpp and vLLM; ignored by servers without a
+            # thinking mode, so it is safe to send unconditionally when asked for.
+            payload['chat_template_kwargs'] = {'enable_thinking': False}
+        return payload
 
     async def _post_chat(self, payload: dict[str, T.Any]) -> dict[str, T.Any]:
         # One retry: local inference servers drop the occasional request while a
@@ -176,9 +183,28 @@ def _mentions_response_format(response: httpx.Response) -> bool:
 
 def _content(data: dict[str, T.Any]) -> str:
     try:
-        return data['choices'][0]['message']['content'] or ''
+        choice = data['choices'][0]
+        content = choice['message']['content'] or ''
     except (KeyError, IndexError, TypeError) as exc:
         raise LlmError(f'unexpected chat completion payload: {str(data)[:200]}') from exc
+
+    if choice.get('finish_reason') == 'length':
+        raise LlmError(_length_hint(choice))
+    return content
+
+
+def _length_hint(choice: dict[str, T.Any]) -> str:
+    """Explain a truncated answer in terms of the two knobs that fix it."""
+    thought = (choice.get('message') or {}).get('reasoning_content')
+    if thought and not (choice.get('message') or {}).get('content'):
+        return (
+            'the model used the whole token budget for reasoning and never wrote an '
+            'answer — raise max_tokens or set disable_thinking = true in [llm]'
+        )
+    return (
+        'the answer was cut off before it was complete — raise max_tokens in [llm] '
+        '(or set disable_thinking = true if the model reasons at length)'
+    )
 
 
 def _parse_json(content: str) -> dict[str, T.Any]:

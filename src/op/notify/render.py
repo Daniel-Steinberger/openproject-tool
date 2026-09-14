@@ -55,6 +55,7 @@ def render_group(
     own_user_id: int | None = None,
     hide_own: bool = True,
     max_comment_chars: int = _DEFAULT_MAX_COMMENT_CHARS,
+    user_names: dict[int, str] | None = None,
 ) -> str:
     """Render one group as a Markdown block: header facts plus activity log."""
     lines = [f'## Work package #{group.work_package_id or "?"} — {group.title}']
@@ -69,7 +70,9 @@ def render_group(
         is_own = own_user_id is not None and activity.user_id == own_user_id
         if is_own and hide_own:
             continue
-        lines.extend(_activity_lines(activity, is_own=is_own, max_chars=max_comment_chars))
+        lines.extend(_activity_lines(
+            activity, is_own=is_own, max_chars=max_comment_chars, user_names=user_names or {}
+        ))
         rendered += 1
 
     if not rendered:
@@ -98,8 +101,12 @@ def _header_lines(group: NotificationGroup, work_package: WorkPackage | None) ->
     return lines
 
 
-def _activity_lines(activity: Activity, *, is_own: bool, max_chars: int) -> list[str]:
-    who = activity.user_name or '?'
+def _activity_lines(
+    activity: Activity, *, is_own: bool, max_chars: int, user_names: dict[int, str]
+) -> list[str]:
+    # Not every instance puts a title on the activity's user link — some return
+    # the bare href, which leaves the log full of anonymous entries.
+    who = activity.user_name or user_names.get(activity.user_id or -1) or '?'
     marker = ' (selbst ausgelöst)' if is_own else ''
     lines = [f'- [{_short(activity.created_at)}] {who}{marker}']
     for detail in activity.details:
