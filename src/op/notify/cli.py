@@ -107,14 +107,33 @@ async def run_notify(
                     _unanalysed(group, blocks.get(group.work_package_id or -1, ''))
                     for group in groups
                 ]
-                if not args.interactive:
-                    console.print(_raw_table(groups))
+                if args.interactive:
+                    await _run_tui(args, config, client, analyses, None,
+                                   own_user_id=own_user_id, user_name=user_name)
+                    return 0
+                console.print(_raw_table(groups))
             else:
+                llm = _build_llm(config)
                 try:
-                    analyses, report = await _analyse(
-                        groups, client, config,
-                        own_user_id=own_user_id, user_name=user_name, refresh=args.refresh,
-                    )
+                    # The client stays open across the TUI: the detail view asks
+                    # it what a work package wants from the reader.
+                    async with llm:
+                        if not config.llm.model:
+                            console.print(await _model_hint(llm))
+                            return 2
+                        analyses = await _analyse(
+                            groups, client, config, llm,
+                            own_user_id=own_user_id, user_name=user_name,
+                            refresh=args.refresh,
+                        )
+                        if args.interactive:
+                            await _run_tui(args, config, client, analyses, llm,
+                                           own_user_id=own_user_id, user_name=user_name)
+                            return 0
+                        report = await build_report(
+                            _sorted(analyses), llm=llm, user_name=user_name,
+                            extra_instructions=config.notifications.extra_instructions,
+                        )
                 except LlmUnavailableError as exc:
                     console.print(_llm_unavailable(exc, config))
                     return 3
@@ -122,17 +141,8 @@ async def run_notify(
                     console.print(f'[red]Das Modell hat keine brauchbare Antwort geliefert:[/red] '
                                   f'{exc}')
                     return 1
-                except _NoModelConfigured as exc:
-                    console.print(str(exc))
-                    return 2
-                if not args.interactive:
-                    console.print(Markdown(report))
-                    console.print(_overview(analyses))
-
-            if args.interactive:
-                app = NotifyApp(config=config, client=client, analyses=analyses)
-                await app.run_async()
-                return 0
+                console.print(Markdown(report))
+                console.print(_overview(analyses))
 
             if wants_marking:
                 return await _mark(args, analyses, client, console)
@@ -145,21 +155,8 @@ async def run_notify(
         return 1
 
 
-class _NoModelConfigured(Exception):
-    """No model name in the config — carries the server's own list as the answer."""
-
-
-async def _analyse(
-    groups: list[NotificationGroup],
-    client: NotificationsClient,
-    config: Config,
-    *,
-    own_user_id: int,
-    user_name: str,
-    refresh: bool,
-) -> tuple[list[GroupAnalysis], str]:
-    cache = AnalysisCache(enabled=config.notifications.cache_enabled and not refresh)
-    llm = LlmClient(
+def _build_llm(config: Config) -> LlmClient:
+    return LlmClient(
         base_url=config.llm.base_url,
         model=config.llm.model,
         api_key=get_llm_api_key(config),
@@ -169,21 +166,43 @@ async def _analyse(
         parallel=config.llm.parallel,
         disable_thinking=config.llm.disable_thinking,
     )
-    async with llm:
-        if not config.llm.model:
-            raise _NoModelConfigured(await _model_hint(llm))
-        analyses = await analyse_groups(
-            groups, op=client, llm=llm, user_name=user_name, cache=cache,
-            own_user_id=own_user_id,
-            hide_own=config.notifications.hide_own_activities,
-            user_names=_user_names(groups, config),
-            extra_instructions=config.notifications.extra_instructions,
-        )
-        report = await build_report(
-            _sorted(analyses), llm=llm, user_name=user_name,
-            extra_instructions=config.notifications.extra_instructions,
-        )
-    return analyses, report
+
+
+async def _analyse(
+    groups: list[NotificationGroup],
+    client: NotificationsClient,
+    config: Config,
+    llm: LlmClient,
+    *,
+    own_user_id: int,
+    user_name: str,
+    refresh: bool,
+) -> list[GroupAnalysis]:
+    cache = AnalysisCache(enabled=config.notifications.cache_enabled and not refresh)
+    return await analyse_groups(
+        groups, op=client, llm=llm, user_name=user_name, cache=cache,
+        own_user_id=own_user_id,
+        hide_own=config.notifications.hide_own_activities,
+        user_names=_user_names(groups, config),
+        extra_instructions=config.notifications.extra_instructions,
+    )
+
+
+async def _run_tui(
+    args: argparse.Namespace,
+    config: Config,
+    client: NotificationsClient,
+    analyses: list[GroupAnalysis],
+    llm: LlmClient | None,
+    *,
+    own_user_id: int,
+    user_name: str,
+) -> None:
+    app = NotifyApp(
+        config=config, client=client, analyses=analyses, llm=llm,
+        own_user_id=own_user_id, user_name=user_name,
+    )
+    await app.run_async()
 
 
 async def _model_hint(llm: LlmClient) -> str:

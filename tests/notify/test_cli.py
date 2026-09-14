@@ -342,8 +342,9 @@ class TestInteractive:
         started: list[T.Any] = []
 
         class FakeApp:
-            def __init__(self, *, config, client, analyses) -> None:
-                started.append(analyses)
+            def __init__(self, *, config, client, analyses, llm=None, own_user_id=None,
+                         user_name='') -> None:
+                started.append((analyses, llm, own_user_id, user_name))
 
             async def run_async(self) -> None:
                 return None
@@ -355,7 +356,12 @@ class TestInteractive:
         )
         assert code == 0
         assert len(started) == 1
-        assert {a.work_package_id for a in started[0]} == {100, 200}
+        analyses, llm, own_user_id, user_name = started[0]
+        assert {a.work_package_id for a in analyses} == {100, 200}
+        # The detail view asks the model for an action line — it needs a live client.
+        assert llm is not None
+        assert own_user_id == 7
+        assert user_name == 'Dana Muster'
 
     async def test_without_llm_the_tui_still_shows_the_activity_block(
         self, respx_mock: respx.MockRouter, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -366,8 +372,9 @@ class TestInteractive:
         started: list[T.Any] = []
 
         class FakeApp:
-            def __init__(self, *, config, client, analyses) -> None:
-                started.append(analyses)
+            def __init__(self, *, config, client, analyses, llm=None, own_user_id=None,
+                         user_name='') -> None:
+                started.append((analyses, llm))
 
             async def run_async(self) -> None:
                 return None
@@ -378,5 +385,6 @@ class TestInteractive:
             parse_notify_args(['-i', '--no-llm']), config=_config(tmp_path), console=console
         )
         assert code == 0
-        blocks = [a.block for a in started[0]]
-        assert any('Bitte einmal anschauen' in (b or '') for b in blocks)
+        analyses, llm = started[0]
+        assert any('Bitte einmal anschauen' in (a.block or '') for a in analyses)
+        assert llm is None  # nothing to ask

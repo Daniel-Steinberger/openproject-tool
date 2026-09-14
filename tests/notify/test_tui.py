@@ -369,3 +369,157 @@ class TestBindingsResolve:
             Config(connection=ConnectionConfig(base_url='https://op.example.com'))
         )
         self.test_class_bindings_have_actions()
+
+
+class FakeLlm:
+    """Stand-in for the LLM client the detail view may ask for an action line."""
+
+    def __init__(self, *, answer: str = 'Entscheide, ob A oder B gilt.') -> None:
+        self.answer = answer
+        self.calls: list[str] = []
+        self.model = 'fake'
+
+    async def complete_text(self, *, system: str, user: str) -> str:
+        self.calls.append(user)
+        return self.answer
+
+
+def _app_with_llm(analyses, llm, **kwargs):  # noqa: ANN001, ANN201
+    return NotifyApp(
+        config=Config(connection=ConnectionConfig(base_url='https://op.example.com')),
+        client=FakeClient(),
+        analyses=analyses,
+        llm=llm,
+        own_user_id=kwargs.get('own_user_id', 7),
+        user_name=kwargs.get('user_name', 'Dana Muster'),
+    )
+
+
+@pytest.fixture
+def people_analyses() -> list[GroupAnalysis]:
+    mine = GroupAnalysis(
+        work_package_id=200, title='Meiner', classification='relevant', summary='S',
+        notification_ids=[3], count=1, latest='2026-09-14T10:00:00Z', block='BLOCK 200',
+        responsible_id=7, responsible_name='Dana Muster',
+        assignee_id=16, assignee_name='Bea Beispiel', status_name='Fachliche Rückfrage',
+        is_mentioned=True,
+    )
+    other = GroupAnalysis(
+        work_package_id=300, title='Fremder', classification='worth_knowing', summary='S',
+        notification_ids=[4], count=1, latest='2026-09-13T10:00:00Z', block='BLOCK 300',
+        responsible_id=99, responsible_name='Cem Muster',
+        assignee_id=99, assignee_name='Cem Muster', status_name='Neu',
+    )
+    return [mine, other]
+
+
+def _static_text(app: NotifyApp, selector: str) -> str:
+    """Plain text of a Static widget (Textual 8 keeps it in `visual`)."""
+    from textual.widgets import Static
+
+    return str(app.screen.query_one(selector, Static).visual)
+
+
+class TestRoleBadges:
+    async def test_own_roles_are_highlighted(self, people_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(people_analyses, None)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            text = _static_text(app, '#notify-roles')
+            assert 'Verantwortlich' in text
+            assert 'du' in text.lower()
+            # The user is responsible but not assignee — the assignee shows by name
+            assert 'Bea Beispiel' in text
+
+    async def test_mention_is_flagged(self, people_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(people_analyses, None)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            text = _static_text(app, '#notify-roles')
+            assert 'rwähnt' in text
+
+    async def test_foreign_work_package_shows_no_own_role(self, people_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(people_analyses, None)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            await pilot.press('n')
+            await pilot.pause()
+            text = _static_text(app, '#notify-roles')
+            assert 'Cem Muster' in text
+            assert 'du' not in text.lower()
+
+
+class TestActionLine:
+    async def test_is_requested_in_the_background_and_shown(self, people_analyses) -> None:  # noqa: ANN001
+        llm = FakeLlm()
+        app = _app_with_llm(people_analyses, llm)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            for _ in range(30):
+                await pilot.pause()
+                rendered = _static_text(app, '#notify-action')
+                if 'Entscheide' in rendered:
+                    break
+            assert 'Entscheide, ob A oder B gilt.' in rendered
+            assert 'BLOCK 200' in llm.calls[0]
+
+    async def test_rest_of_the_page_is_there_before_the_answer(self, people_analyses) -> None:  # noqa: ANN001
+        from textual.widgets import Markdown
+
+        app = _app_with_llm(people_analyses, FakeLlm())
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            # no waiting for the worker — the document must already be rendered
+            source = app.screen.query_one('#notify-detail', Markdown)._markdown or ''
+            assert 'BLOCK 200' in source
+
+    async def test_asked_once_per_work_package(self, people_analyses) -> None:  # noqa: ANN001
+        llm = FakeLlm()
+        app = _app_with_llm(people_analyses, llm)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            for _ in range(30):
+                await pilot.pause()
+                if llm.calls:
+                    break
+            await pilot.press('n')
+            await pilot.pause()
+            await pilot.press('p')  # back to the first one
+            for _ in range(10):
+                await pilot.pause()
+            assert len([c for c in llm.calls if 'BLOCK 200' in c]) == 1
+
+    async def test_without_a_model_the_view_says_so(self, people_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(people_analyses, None)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            await pilot.pause()
+            rendered = _static_text(app, '#notify-action')
+            assert 'kein Modell' in rendered.lower() or 'ohne modell' in rendered.lower()
+
+    async def test_model_failure_does_not_break_the_view(self, people_analyses) -> None:  # noqa: ANN001
+        from op.notify.llm import LlmError
+
+        class BrokenLlm(FakeLlm):
+            async def complete_text(self, *, system: str, user: str) -> str:
+                raise LlmError('nope')
+
+        app = _app_with_llm(people_analyses, BrokenLlm())
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('enter')
+            for _ in range(30):
+                await pilot.pause()
+            rendered = _static_text(app, '#notify-action')
+            assert 'nicht' in rendered.lower()

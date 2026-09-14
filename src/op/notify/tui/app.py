@@ -30,6 +30,8 @@ class NotifyApp(App[None]):
         overflow-x: hidden;
     }
     #notify-detail { height: 1fr; padding: 0 1; }
+    #notify-roles { padding: 0 1; height: auto; background: $panel; }
+    #notify-action { padding: 0 1; height: auto; }
     #notify-applying-progress { dock: bottom; width: 100%; height: 1; }
     """
 
@@ -39,12 +41,23 @@ class NotifyApp(App[None]):
         config: Config,
         client: T.Any,
         analyses: list[GroupAnalysis],
+        llm: T.Any = None,
+        own_user_id: int | None = None,
+        user_name: str = '',
     ) -> None:
         super().__init__()
         self.config = config
         self.client = client
         self.analyses = sort_analyses(analyses)
         self.queue = MarkQueue()
+        # Optional: the detail view asks it what a work package wants from the
+        # user. None with --no-llm, and the view says so instead of pretending.
+        self.llm = llm
+        self.own_user_id = own_user_id
+        self.user_name = user_name
+        # Runtime only, one entry per work package: the answer does not change
+        # while the program runs, and it costs a model call.
+        self.action_lines: dict[int, str] = {}
         # Where the detail view last stood — the list cursor follows it back.
         self.detail_index: int | None = None
 

@@ -130,6 +130,11 @@ Materials; die Klassennamen sind interne Labels und dürfen nicht als Überschri
 **Die Einstufungsregeln nennen ihre Gründe**, nicht nur die drei Labels — das macht die Antwort
 über Modelle hinweg reproduzierbar:
 
+- **Eine direkte Erwähnung schlägt das Modell.** Trägt eine Gruppe eine Benachrichtigung mit
+  Grund `mentioned`, wird sie in `_to_analysis` auf `relevant` gehoben, egal was das Modell
+  geantwortet hat — auch bei Cache-Treffern, und `waits_for_me` wird gesetzt. Jemand hat den
+  Benutzer namentlich angesprochen; das ist eine Tatsache, keine Ermessensfrage. Die Regel steht
+  zusätzlich im Prompt, sonst begründet das Modell eine Einstufung, die es nicht getroffen hat.
 - `relevant`: direkte Frage oder Erwähnung; ein Status, der auf den Benutzer wartet, während er
   Verantwortlicher oder Bearbeiter ist; **eine Arbeit, die nur noch an einer Handlung des
   Benutzers hängt** (bestellen, Key eintragen, freigeben); ein neuer fachlicher Befund mit
@@ -193,7 +198,20 @@ teilen sich die Sektionen mit `op`):
 | Review | `d` entfernen, `g` anwenden, `q` zurück |
 
 Das Detail ist damit ein eigener Durchgang durch die Inbox: `n` weiter, `m` wenn erledigt, ohne
-zwischendurch in die Liste zurückzuspringen. **`m` toggelt die Vormerkung, nicht den
+zwischendurch in die Liste zurückzuspringen. Oben stehen zwei Zeilen über dem Dokument:
+
+- **Rollen-Badges** — Verantwortlicher, Bearbeiter, Status, und ein `@`-Hinweis bei direkter
+  Erwähnung. Wo der Leser selbst eingetragen ist, steht `du (Name)` farblich hervorgehoben; das
+  ist die Information, die darüber entscheidet, wie viel davon einen angeht.
+- **Handlungszeile** — höchstens zwei Sätze, was dieser Vorgang vom Leser will. Sie wird beim
+  Öffnen **im Hintergrund** beim Modell angefragt (Textual-Worker); der Rest der Seite steht
+  sofort. Das Ergebnis liegt in einem **Laufzeit-Cache** (`NotifyApp.action_lines`), also genau
+  ein Modellaufruf je Work Package pro Programmlauf. Ohne Modell (`--no-llm`) sagt die Zeile das,
+  statt etwas vorzutäuschen; schlägt der Aufruf fehl, steht der Fehler dort und sonst ändert sich
+  nichts.
+
+Dafür bleibt der LLM-Client bei `-i` über die Laufzeit der TUI geöffnet — die frühere Regel „die
+TUI spricht nie mit dem Modell" gilt seitdem nur noch für Liste, Review und Applying. **`m` toggelt die Vormerkung, nicht den
 Server-Zustand** — es gibt keinen belegten Weg zurück auf *ungelesen*, geschrieben wird erst beim
 Anwenden. Der Listen-Cursor folgt beim Zurückkehren dorthin, wo `n`/`p` stehengeblieben sind.
 
