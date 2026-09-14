@@ -141,6 +141,11 @@ class NotifyListScreen(Screen[None]):
         if self.app.queue.count:
             self.app.push_screen(NotifyReviewScreen())
 
+    def action_quit(self) -> None:
+        # A screen binding does not reach App.action_quit in Textual 8 — the
+        # action is looked up on the screen, so it has to live here.
+        self.app.exit()
+
     def action_open_browser(self) -> None:
         analysis = self.current()
         if analysis is None or analysis.work_package_id is None:

@@ -312,3 +312,60 @@ class TestDetailNavigation:
             await pilot.press('m')
             await pilot.pause()
             assert app.queue.count == 2
+
+
+class TestQuit:
+    async def test_q_quits_the_app(self, app_factory) -> None:  # noqa: ANN001
+        app = app_factory()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('q')
+            await pilot.pause()
+            assert app._exit, 'q hat die App nicht beendet'
+
+    async def test_custom_quit_key_from_config(self, analyses) -> None:  # noqa: ANN001
+        keybindings = KeybindingsConfig.model_validate({'notify_list': {'quit': 'x'}})
+        app = NotifyApp(
+            config=Config(
+                connection=ConnectionConfig(base_url='https://op.example.com'),
+                keybindings=keybindings,
+            ),
+            client=FakeClient(),
+            analyses=analyses,
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press('x')
+            await pilot.pause()
+            assert app._exit
+
+
+class TestBindingsResolve:
+    """Every bound action must exist on its screen.
+
+    A binding pointing at a missing action fails silently — the key simply does
+    nothing. That is how both `q` (quit) and `r` (reload) slipped through.
+    """
+
+    def _screens(self) -> list[type]:
+        from op.notify.tui.applying_screen import NotifyApplyingScreen
+        from op.notify.tui.detail_screen import NotifyDetailScreen
+        from op.notify.tui.list_screen import NotifyListScreen
+        from op.notify.tui.review_screen import NotifyReviewScreen
+
+        return [NotifyListScreen, NotifyDetailScreen, NotifyReviewScreen, NotifyApplyingScreen]
+
+    def test_class_bindings_have_actions(self) -> None:
+        for screen in self._screens():
+            for binding in screen.BINDINGS:
+                action = binding.action.split('(')[0]
+                assert hasattr(screen, f'action_{action}'), \
+                    f'{screen.__name__} bindet {binding.key!r} auf fehlende Action {action!r}'
+
+    def test_config_applied_bindings_have_actions(self) -> None:
+        from op.notify.tui.keybindings import apply_to_notify_screens
+
+        apply_to_notify_screens(
+            Config(connection=ConnectionConfig(base_url='https://op.example.com'))
+        )
+        self.test_class_bindings_have_actions()

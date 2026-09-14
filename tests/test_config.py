@@ -545,7 +545,6 @@ class TestNotifyKeybindings:
         assert kb.notify_list.mark_churn == 'c'
         assert kb.notify_list.mark_all == 'a'
         assert kb.notify_list.apply == 'g'
-        assert kb.notify_list.reload == 'r'
         assert kb.notify_list.open == 'o'
         assert kb.notify_list.quit == 'q'
         assert kb.notify_detail.close == 'q'
