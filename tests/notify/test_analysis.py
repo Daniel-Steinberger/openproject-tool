@@ -202,3 +202,18 @@ class TestBuildReport:
         )]
         with pytest.raises(LlmError):
             await build_report(analyses, llm=FakeLlm(fail=True), user_name='Dana')
+
+
+class TestTitleComesFromTheApi:
+    async def test_group_title_wins(self, tmp_path: Path) -> None:
+        llm = FakeLlm(answer={
+            'classification': 'churn', 'summary': 'S', 'open_points': [],
+            'waits_for_me': False, 'rationale': 'R',
+            'title': '## Work package #100 — vom Modell erfunden',
+        })
+        result = await analyse_groups(
+            _groups(100), op=FakeOp(), llm=llm, user_name='Dana',
+            cache=AnalysisCache(directory=tmp_path, enabled=False),
+        )
+        assert result[0].title == _groups(100)[0].title
+        assert 'Work package' not in result[0].title

@@ -308,3 +308,23 @@ class TestModeWiring:
         code = await run(_parse_args(['notify']), config=_config(tmp_path), config_path=tmp_path)
         assert code == 0
         assert seen == ['notify']
+
+
+class TestOverviewTable:
+    def test_columns_survive_a_long_title(self) -> None:
+        """A wide title must not squeeze the id and flag columns down to nothing."""
+        from op.notify.analysis import GroupAnalysis
+        from op.notify.cli import _overview
+
+        analyses = [GroupAnalysis(
+            work_package_id=8202,
+            title='Ein sehr langer Titel ' * 10,
+            classification='relevant', summary='S', waits_for_me=True,
+            notification_ids=[1],
+        )]
+        console, text = _console()
+        console.print(_overview(analyses))
+        out = text()
+        assert '8202' in out
+        assert 'relevant' in out
+        assert '✓' in out

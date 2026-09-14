@@ -87,3 +87,24 @@ class TestReportMessages:
         lowered = system.lower()
         assert 'markdown' in lowered
         assert '#<id>' in lowered or 'work package id' in lowered
+
+
+class TestSchemaWithoutTitle:
+    def test_title_is_not_asked_from_the_model(self) -> None:
+        """The work package title is known from the API — asking invites invention."""
+        assert 'title' not in GROUP_SCHEMA['properties']
+        assert 'title' not in GROUP_SCHEMA['required']
+
+
+class TestSharpenedRules:
+    def test_commit_mirror_rule_mentions_the_author_line(self) -> None:
+        system, _ = build_group_messages(block='B', user_name='Dana')
+        lowered = system.lower()
+        assert 'author' in lowered
+        assert 'commit' in lowered
+
+    def test_internal_action_counts_as_relevant(self) -> None:
+        system, _ = build_group_messages(block='B', user_name='Dana')
+        lowered = system.lower()
+        # ordering something, entering a key, granting access: waiting on the user
+        assert 'waiting on an action' in lowered or 'waits for an action' in lowered

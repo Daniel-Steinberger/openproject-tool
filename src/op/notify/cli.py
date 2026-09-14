@@ -234,12 +234,12 @@ async def _mark(
 
 def _raw_table(groups: list[NotificationGroup]) -> Table:
     table = Table(title='Ungelesene Benachrichtigungen', show_lines=False)
-    table.add_column('WP', justify='right')
-    table.add_column('Titel', overflow='fold')
-    table.add_column('Projekt')
-    table.add_column('Anzahl', justify='right')
-    table.add_column('Gründe')
-    table.add_column('Zuletzt')
+    table.add_column('WP', justify='right', no_wrap=True)
+    table.add_column('Titel', max_width=60, overflow='ellipsis', no_wrap=True)
+    table.add_column('Projekt', max_width=18, overflow='ellipsis', no_wrap=True)
+    table.add_column('Anzahl', justify='right', no_wrap=True)
+    table.add_column('Gründe', max_width=24, overflow='ellipsis', no_wrap=True)
+    table.add_column('Zuletzt', no_wrap=True)
     for group in groups:
         reasons = ', '.join(f'{r}×{c}' for r, c in group.reason_counts.items())
         table.add_row(
@@ -251,10 +251,10 @@ def _raw_table(groups: list[NotificationGroup]) -> Table:
 
 def _overview(analyses: list[GroupAnalysis]) -> Table:
     table = Table(title='Einstufung', show_lines=False)
-    table.add_column('WP', justify='right')
-    table.add_column('Einstufung')
-    table.add_column('Titel', overflow='fold')
-    table.add_column('Wartet', justify='center')
+    table.add_column('WP', justify='right', no_wrap=True)
+    table.add_column('Einstufung', no_wrap=True)
+    table.add_column('Titel', max_width=70, overflow='ellipsis', no_wrap=True)
+    table.add_column('Wartet', justify='center', no_wrap=True)
     for analysis in _sorted(analyses):
         label = _CLASSIFICATION_LABEL.get(analysis.classification, analysis.classification)
         if analysis.error:
