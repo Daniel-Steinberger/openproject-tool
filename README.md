@@ -17,6 +17,24 @@ Early development — interfaces may change.
 - Async HTTP (httpx) — parallel pagination and metadata loading
 - Generic — works with any OpenProject v3 instance
 
+## Modes
+
+Besides the work-package search, `op` has two additional modes:
+
+- **`op perms [project]`** — permission tool: project/group view, transfer, hierarchy alignment,
+  user management.
+- **`op notify`** (short: `opn`) — triage the personal notification inbox: grouped per work
+  package, classified and summarised by an OpenAI-compatible LLM of your choice, optionally
+  marking what is done with as read. Entirely optional — it adds no dependency, and `op` itself
+  never talks to a model. Configure `[llm] base_url` and `model`, then:
+
+  ```bash
+  op notify                    # report in the terminal
+  op notify -i                 # TUI: list → detail → review → apply
+  op notify --mark-read-churn  # clear everything classified as noise
+  op notify --no-llm           # grouped raw view, no model involved
+  ```
+
 ## Installation
 
 ```bash

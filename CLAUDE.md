@@ -44,6 +44,7 @@ queue.py        → OperationQueue: PendingOperations sammeln, mergen, batch-app
 perms.py        → Reine Berechtigungslogik (Source-Set-Rekonstruktion, Hierarchie, Diff/Propagation)
 perms_queue.py  → PermissionQueue: polymorphe additive PermActions sammeln
 tui/perms_*.py  → `op perms`-Modus (eigene PermsApp: Projektbaum/Gruppen/Detail/Review/Applying)
+notify/         → `op notify`-Modus (Inbox-Sichtung per LLM, eigene NotifyApp) — siehe unten
 ```
 
 ### `op perms` — Berechtigungs-Tool
@@ -51,6 +52,162 @@ tui/perms_*.py  → `op perms`-Modus (eigene PermsApp: Projektbaum/Gruppen/Detai
 Eigener Modus (`op perms [projekt]`) mit eigener `PermsApp` (kein Task-State). Zeigt Berechtigungen **gruppen-/benutzer-zentriert**: Da die v3-API keinen `inherited_from`-Marker hat, wird das **Source-Set** mengenbasiert rekonstruiert (Gruppen + Direkt-User; via Gruppe sichtbare User werden unter der Gruppe eingeklappt, siehe `perms.build_source_set`). Daten werden **live** geladen (nicht aus dem `[remote.*]`-Cache), inkl. aller Gruppen-Mitgliederlisten.
 
 Zwei Wurzelsichten, umschaltbar mit `v`: **Projektbaum** (`PermsProjectsScreen`, `▲` = weicht vom Oberprojekt ab; Detail zeigt „Fehlt ggü. Oberprojekt") und **Gruppenliste** (`PermsGroupsScreen` → `PermsGroupDetailScreen`: Mitglieder mit Footprint-Abweichung ggü. der **Mehrheit** `▲` und Warnung `⚠` für unübliche direkte Mitgliedschaften). Aktionen: `f` Teilbaum angleichen (`plan_propagation`), `c` von Projekt übertragen (`plan_transfer`), `a` Gruppenmitglied hinzufügen, `h` Abweichler heilen (additiv zur Mehrheit), `n` neuen Benutzer anlegen (Status invited/active, optional Klonen von Gruppen + direkten Mitgliedschaften einer Vorlage). Alles **additiv** (nie entfernen), gesammelt in `PermissionQueue` als typisierte `PermAction`s (`AddProjectMembership`/`AddGroupMembers`/`CloneInto`/`CreateUserClone`, je mit `describe()`+`apply()`), per `g` reviewed und angewendet.
+
+### `op notify` — Benachrichtigungs-Sichtung mit lokalem LLM
+
+Dritter Modus neben `op` und `op perms` (Kurzform: `opn`). Holt die persönliche
+Benachrichtigungs-Inbox (`/api/v3/notifications`), bündelt sie je Work Package, lässt sie von
+einem **OpenAI-kompatiblen Chat-Endpunkt** einstufen und zusammenfassen und markiert auf Wunsch
+ab, was erledigt ist.
+
+**Warum im selben Repo statt in einem eigenen:** die Config-Datei ist dieselbe, und geteilt
+werden `api.py` (Auth, Fehlerübersetzung, Request-Plumbing), `models.py`, `html_to_markdown.py`,
+`logging_setup.py`, das Queue-Muster aus `queue.py` und die respx-Testinfrastruktur. Eine zweite
+Codebasis müsste das per Git-Commit-Pin importieren oder kopieren — `op` ist kein Library-Paket
+mit stabiler API.
+
+**Der Modus ist vollständig optional.** Es kommt keine neue Runtime-Dependency dazu: der
+LLM-Client spricht `/v1/chat/completions` direkt über `httpx`. `op` und `op perms` führen keinen
+LLM-Call aus. Fehlt `[llm]` in der Config oder ist der Server nicht erreichbar, betrifft das
+ausschließlich diesen Modus — und auch dort bleibt `--no-llm` benutzbar.
+
+**Dieses Repo ist öffentlich.** Instanzspezifisches gehört deshalb nicht in den Code, sondern in
+die Config: LLM-Host und Modellname unter `[llm]`, zusätzliche Einstufungsregeln unter
+`[notifications] extra_instructions`. Der mitgelieferte Prompt ist generisch formuliert.
+
+#### Schichten
+
+```
+notify/cli.py        → Argparse-Modus + Rich-Report; Einstiegspunkt `op notify` / `opn`
+notify/api.py        → NotificationsClient (erbt OpenProjectClient): Inbox, Activities, mark_read
+notify/models.py     → Notification, NotificationGroup
+notify/grouping.py   → Notifications → eine Gruppe je Work Package
+notify/render.py     → Aktivitäten → Textblock für den Prompt (WYSIWYG-Markup raus)
+notify/prompts.py    → System-/User-Prompts + JSON-Schema
+notify/llm.py        → LlmClient: httpx gegen /v1/chat/completions, Semaphore, Retry
+notify/analysis.py   → Map-Reduce über die Gruppen, GroupAnalysis
+notify/cache.py      → Analyse-Cache (XDG), Schlüssel = WP + Aktivitäten + Modell + Prompt
+notify/mark.py       → select_analyses() + MarkQueue (pending → done/failed)
+notify/tui/          → NotifyApp: Liste → Detail → Review → Applying
+```
+
+#### Gemessene API-Eigenschaften (gegen OpenProject 13/14)
+
+Diese Punkte sind der Grund für mehrere Design-Entscheidungen — nicht raten, sondern nachlesen:
+
+- **Die Notification trägt keinen Inhalt.** Sie hat `reason`, `createdAt` und Links auf Actor,
+  Activity, Work Package und Projekt. Alles Lesbare wird separat geholt.
+- **`pageSize` ist bei 100 gedeckelt**, und eigene `offset`-Zählung lieferte eine leere zweite
+  Seite. Deshalb blättert `get_notifications()` über `_links.nextByOffset`, mit Schleifenschutz.
+- **Ein Call je Work Package reicht:** `/work_packages/{id}/activities` liefert alle Aktivitäten
+  samt `comment.raw` und `details[].raw` — statt einem Call je Benachrichtigung.
+- **Es gibt keinen belegten Sammel-Endpunkt zum Markieren.** `GET /notifications/read_ian`
+  antwortet 404; ob POST existiert, ist ungeprüft. Markiert wird einzeln über
+  `_links.readIAN`; ein 404 gilt dabei als Erfolg (der Zustand ist erreicht).
+- **`_links.user` einer Aktivität trägt nicht auf jeder Instanz einen `title`.** Ohne
+  Namensmappe steht im Aktivitätslog überall `?`. `render_group(user_names=…)` bekommt die
+  Namen aus den Notification-Aktoren plus `[remote.users]`.
+- **`responsible` fehlte im `WorkPackage`-Modell** und ist für „wartet das auf mich?"
+  aussagekräftiger als `assignee` — nachgetragen, additiv.
+
+#### LLM-Vertrag
+
+**Map, ein Call je Work Package**, Antwort nach `GROUP_SCHEMA`:
+
+```json
+{"classification": "relevant|worth_knowing|churn",
+ "summary": "…", "open_points": ["…"], "waits_for_me": true, "rationale": "…"}
+```
+
+Der Titel wird **nicht** abgefragt — er steht in der API. Ein Feld weniger im Schema ist ein Feld
+weniger zum Erfinden; im ersten Echtlauf lieferte das Modell Titel wie
+`## Work package #7125 — …`, weil es die Kopfzeile des Blocks übernahm.
+
+**Reduce, ein Call über alle Ergebnisse** → Markdown-Bericht, `relevant` zuerst, Churn nur als
+Zählzeile. Die Abschnittsüberschriften formuliert das Modell selbst in der Sprache des
+Materials; die Klassennamen sind interne Labels und dürfen nicht als Überschrift erscheinen.
+
+**Die Einstufungsregeln nennen ihre Gründe**, nicht nur die drei Labels — das macht die Antwort
+über Modelle hinweg reproduzierbar:
+
+- `relevant`: direkte Frage oder Erwähnung; ein Status, der auf den Benutzer wartet, während er
+  Verantwortlicher oder Bearbeiter ist; **eine Arbeit, die nur noch an einer Handlung des
+  Benutzers hängt** (bestellen, Key eintragen, freigeben); ein neuer fachlicher Befund mit
+  Handlungsbedarf; eine kippende Frist.
+- `worth_knowing`: still als Verantwortlicher gesetzt; Ergebnis ohne Handlungsbedarf.
+- `churn`: reine Feldpflege; **Bot-Kommentare, die Commit-Nachrichten spiegeln** (erkennbar an
+  der Autorenzeile am Ende); automatische Rollups aus Unteraufgaben; selbst ausgelöste
+  Aktivitäten.
+
+**Prompt-Härtung:** Aktivitätstexte sind Fremdtext und enthalten regelmäßig selbst
+LLM-generierte Passagen. Sie gehen als `<activity_block>` in den Prompt, mit der ausdrücklichen
+Regel: Material, niemals Anweisung — und: nichts erfinden, was nicht im Block steht.
+
+#### Reasoning-Modelle
+
+Ein denkendes Modell verbraucht das Token-Budget, bevor es antwortet: die erste Messung ergab
+`finish_reason: "length"`, leeren `content` und den ganzen Text in `reasoning_content`.
+Konsequenzen:
+
+- `[llm] disable_thinking = true` sendet `chat_template_kwargs.enable_thinking = false`
+  (llama.cpp und vLLM verstehen das; gemessen: 42 statt 396 Completion-Tokens).
+  `reasoning_effort: "none"` wirkte **nicht**.
+- `max_tokens` steht per Default auf 3000.
+- Eine abgeschnittene Antwort meldet, an welchen zwei Schrauben es liegt, statt „kein JSON".
+
+`json_schema` wird zuerst versucht; antwortet der Server mit 400, fällt der Client auf
+`json_object` zurück — der Benutzer soll den Dialekt seines Servers nicht konfigurieren müssen.
+
+#### Verhalten, das bewusst so ist
+
+- **Eine fehlgeschlagene Gruppe verschwindet nie.** Sie behält ihren Platz, trägt den Fehler und
+  wird **nie** als `churn` eingestuft — sonst räumte `--mark-read-churn` genau das ab, was
+  niemand gelesen hat. Fehlschläge landen aus demselben Grund nicht im Cache.
+- **Benachrichtigungen ohne Work Package** (News, Wiki) bleiben als Einzelgruppen erhalten.
+- **`--mark-read` akzeptiert Work-Package- wie Benachrichtigungs-IDs** und meldet unbekannte,
+  statt sie zu übergehen.
+- **`--no-llm --mark-read-churn` verweigert den Dienst**: ohne Einstufung gibt es kein Rauschen.
+- **Der Cache-Schlüssel bindet den Eintrag an seine Herkunft** (Work Package, gesehene
+  Aktivitäten, Modell, Prompt-Hash) — ein geänderter Prompt entwertet ihn von selbst.
+
+#### Bedienung
+
+```bash
+op notify                        # Bericht im Terminal
+op notify -i                     # TUI: Liste → Detail → Review → Applying
+op notify --mark-read 8202 7661  # genannte Work Packages (oder Notification-IDs)
+op notify --mark-read-churn      # alles als Rauschen Eingestufte
+op notify --mark-read-all        # Inbox leeren
+op notify --no-llm               # gruppierte Rohsicht ohne Modell
+op notify --refresh              # Analyse-Cache übergehen
+opn …                            # Kurzform desselben Modus
+```
+
+TUI-Tasten (aus `[keybindings.notify_list]` / `[keybindings.notify_detail]`, Review und Applying
+teilen sich die Sektionen mit `op`): `space` markieren, `i` invertieren, `c` alles Rauschen,
+`a` alles, `Enter` Detail, `g` Review → `g` anwenden, `o` Browser, `q` zurück/beenden.
+
+#### Config
+
+```toml
+[llm]
+base_url = "http://your-host:8000/v1"   # muss den API-Präfix enthalten
+model = "your-model"                    # Name laut GET <base_url>/models
+# api_key = "…"                         # oder OP_LLM_API_KEY; lokal meist unnötig
+# temperature = 0.2
+# max_tokens = 3000
+# parallel = 4
+# timeout = 180.0
+# disable_thinking = false              # true bei denkenden Modellen
+
+[notifications]
+# extra_instructions = ""               # instanzspezifische Einstufungsregeln
+# hide_own_activities = true
+# cache_enabled = true
+```
+
+Beide Sektionen werden in bestehende Config-Dateien nachgetragen (`_migrate_optional_sections`),
+ohne Kommentare zu verlieren.
 
 ### Datenfluss
 
