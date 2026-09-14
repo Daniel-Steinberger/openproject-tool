@@ -27,6 +27,7 @@ from op.api import (
 from op.config import Config, DefaultsConfig, default_config_path, get_api_key, load_config
 from op.logging_setup import setup_logging
 from op.models import WorkPackage
+from op.notify.cli import parse_notify_args, run_notify
 from op.search import FILTER_KEYS, build_api_filter_variants, parse
 from op.tui.app import OpApp
 from op.tui.perms_app import PermsApp
@@ -65,6 +66,8 @@ def main() -> None:
 _MODES: list[tuple[str, str]] = [
     ('perms [projekt]', 'Berechtigungs-Tool (eigener TUI-Modus): Projekt-/Gruppensicht, '
                         'Übertragen, Hierarchie angleichen, Benutzerverwaltung.'),
+    ('notify', 'Benachrichtigungs-Inbox sichten: gruppiert je Work Package, vom '
+               'lokalen LLM eingestuft, wahlweise als gelesen markieren. Kurzform: `opn`.'),
 ]
 
 
@@ -103,6 +106,15 @@ def _parse_args(argv: list[str], *, defaults: DefaultsConfig | None = None) -> a
             command='perms', perms_project=ns.project,
             load_remote_data=False, interactive=False, query=[],
         )
+
+    # `op notify` brings its own flags and its own client — the query parser
+    # never sees them.
+    if argv and argv[0] == 'notify':
+        args = parse_notify_args(argv[1:])
+        args.load_remote_data = False
+        args.query = []
+        args.config = False
+        return args
 
     parser = argparse.ArgumentParser(
         prog='op',
@@ -203,6 +215,14 @@ async def run(
         config_path = config_path or default_config_path()
         config = load_config(config_path)
     setup_logging(config)
+
+    # notify manages its own client (different endpoints, plus an LLM connection).
+    if getattr(args, 'command', None) == 'notify':
+        return await run_notify(
+            args, config=config, config_path=config_path or default_config_path(),
+            console=console,
+        )
+
     api_key = get_api_key(config)
     if not api_key:
         Console(stderr=True).print(
