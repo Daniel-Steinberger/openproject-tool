@@ -53,6 +53,14 @@ class NotificationsClient(OpenProjectClient):
     async def get_unread_notifications(self) -> list[Notification]:
         return await self.get_notifications(read=False)
 
+    async def get_me(self) -> tuple[int, str]:
+        """Id and display name of the authenticated user — the inbox owner."""
+        data = await self._request('GET', '/users/me')
+        name = data.get('name') or ' '.join(
+            part for part in (data.get('firstName'), data.get('lastName')) if part
+        )
+        return int(data['id']), name or data.get('login') or f"#{data['id']}"
+
     async def mark_read(self, notification: int | Notification) -> None:
         """Mark one notification as read.
 

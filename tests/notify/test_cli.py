@@ -57,7 +57,7 @@ def _mock_openproject(
             },
         })
     )
-    respx_mock.get(url__regex=rf'{OP_URL}/api/v3/work_packages/\d+/activities$').mock(
+    respx_mock.get(url__regex=rf'{OP_URL}/api/v3/work_packages/\d+/activities').mock(
         return_value=httpx.Response(200, json={
             'total': 1, 'count': 1,
             '_embedded': {'elements': [{
@@ -277,3 +277,34 @@ class TestApiKey:
         code = await run_notify(parse_notify_args([]), config=config, console=console)
         assert code == 2
         assert 'API' in text()
+
+
+class TestModeWiring:
+    def test_op_parses_notify_as_a_mode(self) -> None:
+        from op.cli import _parse_args
+
+        args = _parse_args(['notify', '--no-llm'])
+        assert args.command == 'notify'
+        assert args.no_llm is True
+
+    def test_notify_mode_is_listed_in_help(self) -> None:
+        from op.cli import _modes_epilog
+
+        assert 'notify' in _modes_epilog()
+
+    async def test_run_dispatches_to_notify(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import op.cli as op_cli
+        from op.cli import _parse_args, run
+
+        seen: list[str] = []
+
+        async def fake_run_notify(args, *, config, config_path, console) -> int:
+            seen.append(args.command)
+            return 0
+
+        monkeypatch.setattr(op_cli, 'run_notify', fake_run_notify)
+        code = await run(_parse_args(['notify']), config=_config(tmp_path), config_path=tmp_path)
+        assert code == 0
+        assert seen == ['notify']
