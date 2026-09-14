@@ -413,3 +413,152 @@ class TestKeybindingsMigration:
         content_after_first = path.read_text()
         load_config(path)
         assert path.read_text() == content_after_first  # second run changes nothing
+
+
+class TestLlmConfig:
+    def test_defaults_when_section_missing(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        cfg = load_config(path)
+        assert cfg.llm.base_url == 'http://localhost:8000/v1'
+        assert cfg.llm.model == ''
+        assert cfg.llm.temperature == 0.2
+        assert cfg.llm.parallel == 4
+        assert cfg.llm.timeout == 180.0
+        assert cfg.llm.api_key is None
+
+    def test_reads_section(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text(
+            '[connection]\nbase_url = "x"\n\n'
+            '[llm]\n'
+            'base_url = "http://llm.example.com:8000/v1"\n'
+            'model = "some-model"\n'
+            'temperature = 0.5\n'
+            'parallel = 2\n'
+            'timeout = 60.0\n'
+            'max_tokens = 900\n'
+        )
+        cfg = load_config(path)
+        assert cfg.llm.base_url == 'http://llm.example.com:8000/v1'
+        assert cfg.llm.model == 'some-model'
+        assert cfg.llm.temperature == 0.5
+        assert cfg.llm.parallel == 2
+        assert cfg.llm.timeout == 60.0
+        assert cfg.llm.max_tokens == 900
+
+    def test_trailing_slash_stripped_from_base_url(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n\n[llm]\nbase_url = "http://h:8000/v1/"\n')
+        cfg = load_config(path)
+        assert cfg.llm.base_url == 'http://h:8000/v1'
+
+    def test_section_added_to_existing_config_with_comments(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('# keep me\n[connection]\nbase_url = "x"\n')
+        load_config(path)
+        content = path.read_text()
+        assert '[llm]' in content
+        assert '# keep me' in content
+        assert 'base_url = "x"' in content
+        assert 'OP_LLM_API_KEY' in content  # documents the env var
+
+    def test_migration_is_idempotent(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        load_config(path)
+        first = path.read_text()
+        load_config(path)
+        assert path.read_text() == first
+
+    def test_existing_section_keeps_user_values(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n\n[llm]\nmodel = "mine"\n')
+        cfg = load_config(path)
+        assert cfg.llm.model == 'mine'
+        assert cfg.llm.parallel == 4  # default filled in
+
+
+class TestGetLlmApiKey:
+    def test_env_var_wins_over_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from op.config import LlmConfig, get_llm_api_key
+
+        monkeypatch.setenv('OP_LLM_API_KEY', 'env-key')
+        cfg = Config(
+            connection=ConnectionConfig(base_url='https://x'),
+            llm=LlmConfig(api_key='config-key'),
+        )
+        assert get_llm_api_key(cfg) == 'env-key'
+
+    def test_falls_back_to_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from op.config import LlmConfig, get_llm_api_key
+
+        monkeypatch.delenv('OP_LLM_API_KEY', raising=False)
+        cfg = Config(
+            connection=ConnectionConfig(base_url='https://x'),
+            llm=LlmConfig(api_key='config-key'),
+        )
+        assert get_llm_api_key(cfg) == 'config-key'
+
+    def test_none_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from op.config import get_llm_api_key
+
+        monkeypatch.delenv('OP_LLM_API_KEY', raising=False)
+        cfg = Config(connection=ConnectionConfig(base_url='https://x'))
+        assert get_llm_api_key(cfg) is None
+
+
+class TestNotificationsConfig:
+    def test_defaults_when_section_missing(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        cfg = load_config(path)
+        assert cfg.notifications.extra_instructions == ''
+        assert cfg.notifications.hide_own_activities is True
+        assert cfg.notifications.cache_enabled is True
+
+    def test_reads_section(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text(
+            '[connection]\nbase_url = "x"\n\n'
+            '[notifications]\n'
+            'extra_instructions = "Treat deploy tickets as relevant."\n'
+            'hide_own_activities = false\n'
+            'cache_enabled = false\n'
+        )
+        cfg = load_config(path)
+        assert cfg.notifications.extra_instructions == 'Treat deploy tickets as relevant.'
+        assert cfg.notifications.hide_own_activities is False
+        assert cfg.notifications.cache_enabled is False
+
+    def test_section_added_to_existing_config(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        load_config(path)
+        assert '[notifications]' in path.read_text()
+
+
+class TestNotifyKeybindings:
+    def test_defaults(self) -> None:
+        kb = KeybindingsConfig()
+        assert kb.notify_list.toggle == 'space'
+        assert kb.notify_list.mark_churn == 'c'
+        assert kb.notify_list.mark_all == 'a'
+        assert kb.notify_list.apply == 'g'
+        assert kb.notify_list.reload == 'r'
+        assert kb.notify_list.open == 'o'
+        assert kb.notify_list.quit == 'q'
+        assert kb.notify_detail.close == 'q'
+        assert kb.notify_detail.open == 'o'
+
+    def test_sections_added_by_migration(self, tmp_path: Path) -> None:
+        path = tmp_path / 'config.toml'
+        path.write_text('[connection]\nbase_url = "x"\n')
+        load_config(path)
+        content = path.read_text()
+        assert '[keybindings.notify_list]' in content
+        assert '[keybindings.notify_detail]' in content
+
+    def test_caret_notation_supported(self) -> None:
+        kb = KeybindingsConfig.model_validate({'notify_list': {'apply': '^g'}})
+        assert kb.notify_list.apply == 'ctrl+g'
