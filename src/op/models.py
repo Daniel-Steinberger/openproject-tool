@@ -154,6 +154,7 @@ class Activity(_ApiModel):
     user_name: str | None = None
     user_id: int | None = None
     created_at: str | None = None
+    details: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_api(cls, payload: dict[str, T.Any]) -> Activity:
@@ -161,10 +162,16 @@ class Activity(_ApiModel):
         comment_raw = comment_payload.get('raw') or None
         comment_html = comment_payload.get('html') or None
         links = payload.get('_links', {})
+        details = [
+            detail.get('raw')
+            for detail in payload.get('details') or []
+            if isinstance(detail, dict) and detail.get('raw')
+        ]
         return cls(
             id=payload['id'],
             comment=comment_raw,
             comment_html=comment_html,
+            details=details,
             user_name=_link_title(links, 'user'),
             user_id=_link_id(links, 'user'),
             created_at=payload.get('createdAt'),
@@ -239,6 +246,8 @@ class WorkPackage(_ApiModel):
     priority_name: str | None = None
     assignee_id: int | None = None
     assignee_name: str | None = None
+    responsible_id: int | None = None
+    responsible_name: str | None = None
     author_id: int | None = None
     author_name: str | None = None
     start_date: date | None = None
@@ -288,6 +297,8 @@ class WorkPackage(_ApiModel):
             priority_name=_link_title(links, 'priority'),
             assignee_id=_link_id(links, 'assignee'),
             assignee_name=_link_title(links, 'assignee'),
+            responsible_id=_link_id(links, 'responsible'),
+            responsible_name=_link_title(links, 'responsible'),
             author_id=_link_id(links, 'author'),
             author_name=_link_title(links, 'author'),
             start_date=_parse_date(payload.get('startDate')),
