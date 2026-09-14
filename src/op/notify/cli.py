@@ -233,13 +233,13 @@ async def _mark(
 
 
 def _raw_table(groups: list[NotificationGroup]) -> Table:
-    table = Table(title='Ungelesene Benachrichtigungen', show_lines=False)
-    table.add_column('WP', justify='right', no_wrap=True)
-    table.add_column('Titel', max_width=60, overflow='ellipsis', no_wrap=True)
+    table = Table(title='Ungelesene Benachrichtigungen', show_lines=False, expand=True)
+    table.add_column('WP', justify='right', min_width=5, no_wrap=True)
+    table.add_column('Titel', overflow='ellipsis', no_wrap=True, ratio=1)
     table.add_column('Projekt', max_width=18, overflow='ellipsis', no_wrap=True)
-    table.add_column('Anzahl', justify='right', no_wrap=True)
-    table.add_column('Gründe', max_width=24, overflow='ellipsis', no_wrap=True)
-    table.add_column('Zuletzt', no_wrap=True)
+    table.add_column('Anzahl', justify='right', min_width=6, no_wrap=True)
+    table.add_column('Gründe', max_width=22, overflow='ellipsis', no_wrap=True)
+    table.add_column('Zuletzt', min_width=16, no_wrap=True)
     for group in groups:
         reasons = ', '.join(f'{r}×{c}' for r, c in group.reason_counts.items())
         table.add_row(
@@ -250,11 +250,11 @@ def _raw_table(groups: list[NotificationGroup]) -> Table:
 
 
 def _overview(analyses: list[GroupAnalysis]) -> Table:
-    table = Table(title='Einstufung', show_lines=False)
-    table.add_column('WP', justify='right', no_wrap=True)
-    table.add_column('Einstufung', no_wrap=True)
-    table.add_column('Titel', max_width=70, overflow='ellipsis', no_wrap=True)
-    table.add_column('Wartet', justify='center', no_wrap=True)
+    table = Table(title='Einstufung', show_lines=False, expand=True)
+    table.add_column('WP', justify='right', min_width=5, no_wrap=True)
+    table.add_column('Einstufung', min_width=12, no_wrap=True)
+    table.add_column('Titel', overflow='ellipsis', no_wrap=True, ratio=1)
+    table.add_column('Wartet', justify='center', min_width=6, no_wrap=True)
     for analysis in _sorted(analyses):
         label = _CLASSIFICATION_LABEL.get(analysis.classification, analysis.classification)
         if analysis.error:

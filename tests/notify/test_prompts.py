@@ -11,7 +11,7 @@ class TestGroupSchema:
     def test_shape(self) -> None:
         props = GROUP_SCHEMA['properties']
         assert set(props) == {
-            'classification', 'title', 'summary', 'open_points', 'waits_for_me', 'rationale'
+            'classification', 'summary', 'open_points', 'waits_for_me', 'rationale'
         }
         assert props['classification']['enum'] == ['relevant', 'worth_knowing', 'churn']
         assert props['open_points']['type'] == 'array'

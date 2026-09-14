@@ -322,8 +322,9 @@ class TestOverviewTable:
             classification='relevant', summary='S', waits_for_me=True,
             notification_ids=[1],
         )]
-        console, text = _console()
+        console = Console(record=True, width=80, force_terminal=False)
         console.print(_overview(analyses))
+        text = console.export_text
         out = text()
         assert '8202' in out
         assert 'relevant' in out

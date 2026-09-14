@@ -176,7 +176,8 @@ def _to_analysis(
         classification = _FALLBACK_CLASSIFICATION
     return GroupAnalysis(
         work_package_id=group.work_package_id,
-        title=str(answer.get('title') or group.title),
+        # The title comes from the API, never from the model.
+        title=group.title,
         classification=classification,
         summary=str(answer.get('summary') or ''),
         open_points=[str(p) for p in answer.get('open_points') or []],
