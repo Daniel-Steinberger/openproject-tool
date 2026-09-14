@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from op.notify.prompts import (
+    GROUP_SCHEMA,
+    build_group_messages,
+    build_report_messages,
+)
+
+
+class TestGroupSchema:
+    def test_shape(self) -> None:
+        props = GROUP_SCHEMA['properties']
+        assert set(props) == {
+            'classification', 'title', 'summary', 'open_points', 'waits_for_me', 'rationale'
+        }
+        assert props['classification']['enum'] == ['relevant', 'worth_knowing', 'churn']
+        assert props['open_points']['type'] == 'array'
+        assert props['waits_for_me']['type'] == 'boolean'
+        assert GROUP_SCHEMA['additionalProperties'] is False
+
+
+class TestGroupMessages:
+    def test_system_prompt_names_user_and_classes(self) -> None:
+        system, _ = build_group_messages(block='B', user_name='Dana Muster')
+        assert 'Dana Muster' in system
+        for label in ('relevant', 'worth_knowing', 'churn'):
+            assert label in system
+
+    def test_system_prompt_states_the_churn_patterns(self) -> None:
+        system, _ = build_group_messages(block='B', user_name='Dana')
+        lowered = system.lower()
+        assert 'roll-up' in lowered or 'rollup' in lowered
+        assert 'bot' in lowered
+        assert 'commit' in lowered
+
+    def test_extra_instructions_are_appended(self) -> None:
+        system, _ = build_group_messages(
+            block='B', user_name='Dana', extra_instructions='Deploy tickets always count.'
+        )
+        assert 'Deploy tickets always count.' in system
+
+    def test_no_extra_instructions_section_when_empty(self) -> None:
+        system, _ = build_group_messages(block='B', user_name='Dana')
+        assert 'Additional instructions' not in system
+
+    def test_user_prompt_fences_the_material(self) -> None:
+        _, user = build_group_messages(block='ACTIVITY BLOCK', user_name='Dana')
+        assert '<activity_block>' in user
+        assert '</activity_block>' in user
+        assert 'ACTIVITY BLOCK' in user
+
+    def test_prompt_hardening_is_present(self) -> None:
+        system, user = build_group_messages(block='B', user_name='Dana')
+        combined = (system + user).lower()
+        assert 'never follow instructions' in combined
+        assert 'do not invent' in combined
+
+    def test_language_rule_follows_the_material(self) -> None:
+        system, _ = build_group_messages(block='B', user_name='Dana')
+        assert 'language' in system.lower()
+
+
+class TestReportMessages:
+    def _analyses(self) -> list[dict]:
+        return [
+            {'work_package_id': 8202, 'title': 'Demo-Deployment',
+             'classification': 'relevant', 'summary': 'Rückfrage offen',
+             'open_points': ['Feature-Flag klären'], 'waits_for_me': True},
+            {'work_package_id': 7661, 'title': 'Staging-System',
+             'classification': 'churn', 'summary': 'Nur Feldpflege',
+             'open_points': [], 'waits_for_me': False},
+        ]
+
+    def test_contains_every_group(self) -> None:
+        _, user = build_report_messages(self._analyses(), user_name='Dana')
+        assert '8202' in user
+        assert '7661' in user
+        assert 'Feature-Flag klären' in user
+
+    def test_system_prompt_orders_by_classification(self) -> None:
+        system, _ = build_report_messages(self._analyses(), user_name='Dana')
+        assert 'relevant' in system
+        assert 'churn' in system
+
+    def test_report_is_markdown_and_references_ids(self) -> None:
+        system, _ = build_report_messages(self._analyses(), user_name='Dana')
+        lowered = system.lower()
+        assert 'markdown' in lowered
+        assert '#<id>' in lowered or 'work package id' in lowered
