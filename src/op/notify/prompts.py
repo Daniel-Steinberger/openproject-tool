@@ -101,13 +101,16 @@ Rules:
 
 1. Output Markdown: a short heading per section, one compact entry per work \
 package. Reference each one as #<id> so it stays clickable.
-2. Lead with what waits for {user}, then the substance. Keep each entry to a few \
+2. Word every heading yourself, in the language of the material, so it reads \
+like a sentence a colleague would write. Do not use the classification names \
+("relevant", "worth_knowing", "churn") as headings — they are internal labels.
+3. Lead with what waits for {user}, then the substance. Keep each entry to a few \
 lines; the details live in the work package.
-3. Carry over the open points verbatim in meaning — do not invent new ones and \
+4. Carry over the open points verbatim in meaning — do not invent new ones and \
 do not drop any.
-4. Do not invent facts beyond the supplied results.
-5. Write in the same language as the supplied summaries.
-6. No closing pleasantries, no offers of further help."""
+5. Do not invent facts beyond the supplied results.
+6. Write in the same language as the supplied summaries.
+7. No closing pleasantries, no offers of further help."""
 
 _REPORT_USER = """\
 <triage_results>

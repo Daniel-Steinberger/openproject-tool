@@ -108,3 +108,12 @@ class TestSharpenedRules:
         lowered = system.lower()
         # ordering something, entering a key, granting access: waiting on the user
         assert 'waiting on an action' in lowered or 'waits for an action' in lowered
+
+
+class TestReportHeadings:
+    def test_class_names_must_not_become_headings(self) -> None:
+        """'worth_knowing' is an internal label, not a section title for a reader."""
+        system, _ = build_report_messages([], user_name='Dana')
+        lowered = system.lower()
+        assert 'heading' in lowered
+        assert 'do not use the classification names' in lowered
