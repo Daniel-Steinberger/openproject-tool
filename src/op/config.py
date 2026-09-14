@@ -6,7 +6,49 @@ from pathlib import Path
 from typing import Annotated
 
 import tomlkit
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, Field, field_validator
+
+_LLM_SECTION = """\
+[llm]
+# OpenAI-compatible chat endpoint used by `op notify` — and only by that mode.
+# `op` and `op perms` never talk to an LLM, so this section can stay untouched
+# if you don't use the notification triage.
+#
+# base_url must include the API prefix, e.g. http://your-host:8000/v1
+base_url = "http://localhost:8000/v1"
+
+# Model name as reported by GET <base_url>/models
+model = ""
+
+# API key — set the environment variable OP_LLM_API_KEY, or uncomment below.
+# The variable always takes precedence. Local servers usually need no key.
+# api_key = "your-llm-api-key"
+
+# temperature = 0.2       # low on purpose: this is classification, not prose
+# max_tokens = 1500       # per work package summary
+# parallel = 4            # concurrent requests to the LLM
+# timeout = 180.0         # seconds per request
+
+
+"""
+
+_NOTIFICATIONS_SECTION = """\
+[notifications]
+# Settings for `op notify` — the notification inbox triage mode.
+
+# Extra classification rules, appended to the built-in prompt. Use this for
+# knowledge specific to your instance, e.g. which bot accounts only mirror
+# your own commits, or which projects you always want flagged.
+# extra_instructions = ""
+
+# Skip activities you triggered yourself — they rarely tell you anything new.
+# hide_own_activities = true
+
+# Cache LLM results per work package; `--refresh` bypasses the cache.
+# cache_enabled = true
+
+
+"""
 
 _DEFAULT_CONFIG_TEMPLATE = """\
 [connection]
@@ -115,6 +157,7 @@ type = ["Task", "Bug", "Feature"]
 # save          = "q"
 
 
+""" + _LLM_SECTION + _NOTIFICATIONS_SECTION + """\
 [remote]
 # This section is auto-populated by: op --load-remote-data
 # Do not edit manually — your changes will be overwritten.
@@ -208,6 +251,22 @@ class IgnoreListKeybindings(BaseModel):
     save: KeyStr = 'q'
 
 
+class NotifyListKeybindings(BaseModel):
+    toggle: KeyStr = 'space'
+    invert: KeyStr = 'i'
+    mark_churn: KeyStr = 'c'
+    mark_all: KeyStr = 'a'
+    apply: KeyStr = 'g'
+    reload: KeyStr = 'r'
+    open: KeyStr = 'o'
+    quit: KeyStr = 'q'
+
+
+class NotifyDetailKeybindings(BaseModel):
+    close: KeyStr = 'q'
+    open: KeyStr = 'o'
+
+
 class ApplyingKeybindings(BaseModel):
     close: KeyStr = 'q'
 
@@ -223,6 +282,8 @@ class KeybindingsConfig(BaseModel):
     calendar: CalendarKeybindings = Field(default_factory=CalendarKeybindings)
     applying: ApplyingKeybindings = Field(default_factory=ApplyingKeybindings)
     ignore_list: IgnoreListKeybindings = Field(default_factory=IgnoreListKeybindings)
+    notify_list: NotifyListKeybindings = Field(default_factory=NotifyListKeybindings)
+    notify_detail: NotifyDetailKeybindings = Field(default_factory=NotifyDetailKeybindings)
 
 
 class ConnectionConfig(BaseModel):
@@ -266,6 +327,31 @@ class FilterConfig(BaseModel):
     ignore_filter_active: bool = True
 
 
+class LlmConfig(BaseModel):
+    """OpenAI-compatible chat endpoint — used by `op notify` only."""
+
+    base_url: str = 'http://localhost:8000/v1'
+    model: str = ''
+    api_key: str | None = None
+    temperature: float = 0.2
+    max_tokens: int = 1500
+    parallel: int = 4
+    timeout: float = 180.0
+
+    @field_validator('base_url')
+    @classmethod
+    def _strip_trailing_slash(cls, value: str) -> str:
+        return value.rstrip('/')
+
+
+class NotificationsConfig(BaseModel):
+    """Behaviour of the `op notify` triage mode."""
+
+    extra_instructions: str = ''
+    hide_own_activities: bool = True
+    cache_enabled: bool = True
+
+
 class LoggingConfig(BaseModel):
     level: str = 'INFO'
     file: Path | None = None
@@ -278,6 +364,8 @@ class Config(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     filter: FilterConfig = Field(default_factory=FilterConfig)
     keybindings: KeybindingsConfig = Field(default_factory=KeybindingsConfig)
+    llm: LlmConfig = Field(default_factory=LlmConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 
 
 def default_config_path() -> Path:
@@ -295,7 +383,7 @@ def load_config(path: Path | None = None) -> Config:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_DEFAULT_CONFIG_TEMPLATE)
     doc = tomlkit.parse(path.read_text())
-    _migrate_keybindings(path, doc)
+    _migrate(path, doc)
     data = doc.unwrap()
     return Config.model_validate(_normalise(data))
 
@@ -306,6 +394,14 @@ def get_api_key(config: Config) -> str | None:
     if env:
         return env
     return config.connection.api_key
+
+
+def get_llm_api_key(config: Config) -> str | None:
+    """Return the LLM API key — env var OP_LLM_API_KEY wins over the config file."""
+    env = os.environ.get('OP_LLM_API_KEY')
+    if env:
+        return env
+    return config.llm.api_key
 
 
 def update_remote(
@@ -461,6 +557,20 @@ _KB_COMMENTS: dict[str, dict[str, str]] = {
     'applying': {
         'close': '',
     },
+    'notify_list': {
+        'toggle': 'mark/unmark a notification group',
+        'invert': 'invert selection',
+        'mark_churn': 'select everything classified as churn',
+        'mark_all': 'select everything',
+        'apply': 'go to review/apply queue',
+        'reload': 'reload the inbox',
+        'open': 'open work package in browser',
+        'quit': '',
+    },
+    'notify_detail': {
+        'close': '',
+        'open': 'open work package in browser',
+    },
     'ignore_list': {
         'unignore': 'remove task from ignore list',
         'filter_toggle': 'toggle ignore filter on/off',
@@ -476,12 +586,44 @@ def _kb_item(value: str, comment: str) -> tomlkit.items.Item:
     return item
 
 
-def _migrate_keybindings(path: Path, doc: tomlkit.TOMLDocument) -> None:
+def _migrate(path: Path, doc: tomlkit.TOMLDocument) -> None:
+    """Bring an older config file up to the current set of sections.
+
+    Rewrites the file only when something was actually missing, so repeated
+    loads leave a hand-edited file byte-identical.
+    """
+    changed = _migrate_keybindings(doc)
+    changed |= _migrate_optional_sections(doc)
+    if changed:
+        path.write_text(tomlkit.dumps(doc))
+
+
+def _migrate_optional_sections(doc: tomlkit.TOMLDocument) -> bool:
+    """Add the [llm] and [notifications] sections to configs written before them.
+
+    Both are commented-out-by-default blocks: the defaults in `LlmConfig` /
+    `NotificationsConfig` apply either way, the file just documents them.
+    """
+    changed = False
+    for name, template in (('llm', _LLM_SECTION), ('notifications', _NOTIFICATIONS_SECTION)):
+        if name in doc:
+            continue
+        for item in tomlkit.parse(template).body:
+            key, value = item
+            if key is None:
+                doc.add(value)
+            else:
+                doc.add(key, value)
+        changed = True
+    return changed
+
+
+def _migrate_keybindings(doc: tomlkit.TOMLDocument) -> bool:
     """Ensure [keybindings] and all its subsections are present with all keys.
 
     Missing subsections are added with default values and inline comments.
     Missing keys within existing subsections are added with their defaults.
-    Rewrites the file only when something changed.
+    Returns True when the document was changed.
     """
     changed = False
     if 'keybindings' not in doc:
@@ -511,8 +653,7 @@ def _migrate_keybindings(path: Path, doc: tomlkit.TOMLDocument) -> None:
                 if key not in kb_doc[field_name]:
                     kb_doc[field_name].add(key, _kb_item(val, comments.get(key, '')))
                     changed = True
-    if changed:
-        path.write_text(tomlkit.dumps(doc))
+    return changed
 
 
 def _normalise(data: dict[str, T.Any]) -> dict[str, T.Any]:
@@ -523,4 +664,6 @@ def _normalise(data: dict[str, T.Any]) -> dict[str, T.Any]:
     data.setdefault('logging', {})
     data.setdefault('filter', {})
     data.setdefault('keybindings', {})
+    data.setdefault('llm', {})
+    data.setdefault('notifications', {})
     return data
