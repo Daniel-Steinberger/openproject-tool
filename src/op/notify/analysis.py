@@ -40,6 +40,12 @@ class GroupAnalysis(BaseModel):
     rationale: str = ''
     notification_ids: list[int] = Field(default_factory=list)
     project_name: str | None = None
+    status_name: str | None = None
+    responsible_id: int | None = None
+    responsible_name: str | None = None
+    assignee_id: int | None = None
+    assignee_name: str | None = None
+    is_mentioned: bool = False
     count: int = 0
     latest: str | None = None
     cached: bool = False
@@ -101,14 +107,14 @@ async def render_blocks(
     user_names: dict[int, str] | None = None,
 ) -> dict[int, str]:
     """Activity blocks without any model involved — used by `--no-llm`."""
-    blocks = await asyncio.gather(*(
+    rendered = await asyncio.gather(*(
         _render(group, op=op, own_user_id=own_user_id, hide_own=hide_own,
                 user_names=user_names or {})
         for group in groups
     ))
     return {
         group.work_package_id: block
-        for group, block in zip(groups, blocks, strict=True)
+        for group, (block, _wp) in zip(groups, rendered, strict=True)
         if group.work_package_id is not None
     }
 
@@ -148,7 +154,7 @@ async def _analyse_one(
     user_names: dict[int, str],
     extra_instructions: str,
 ) -> GroupAnalysis:
-    block = await _render(
+    block, work_package = await _render(
         group, op=op, own_user_id=own_user_id, hide_own=hide_own, user_names=user_names
     )
     system, user = build_group_messages(
@@ -158,17 +164,17 @@ async def _analyse_one(
 
     cached = cache.get(key)
     if cached is not None:
-        return _to_analysis(group, cached, cached_hit=True, block=block)
+        return _to_analysis(group, cached, cached_hit=True, block=block, wp=work_package)
 
     try:
         answer = await llm.complete_json(system=system, user=user, schema=GROUP_SCHEMA)
     except LlmError as exc:
         log.warning('analysis failed for work package %s: %s', group.work_package_id, exc)
-        return _failed(group, str(exc), block=block)
+        return _failed(group, str(exc), block=block, wp=work_package)
 
     # Only successful answers are cached — a failure must be retried next run.
     cache.set(key, answer)
-    return _to_analysis(group, answer, cached_hit=False, block=block)
+    return _to_analysis(group, answer, cached_hit=False, block=block, wp=work_package)
 
 
 async def _render(
@@ -178,26 +184,39 @@ async def _render(
     own_user_id: int | None,
     hide_own: bool,
     user_names: dict[int, str],
-) -> str:
+) -> tuple[str, WorkPackage | None]:
     if group.work_package_id is None:
-        return render_group(group, None, [], own_user_id=own_user_id, hide_own=hide_own,
-                            user_names=user_names)
+        block = render_group(group, None, [], own_user_id=own_user_id, hide_own=hide_own,
+                             user_names=user_names)
+        return block, None
     work_package, activities = await asyncio.gather(
         op.get_work_package(group.work_package_id),
         op.get_activities(group.work_package_id),
     )
-    return render_group(
+    block = render_group(
         group, work_package, activities,
         own_user_id=own_user_id, hide_own=hide_own, user_names=user_names,
     )
+    return block, work_package
 
 
 def _to_analysis(
-    group: NotificationGroup, answer: dict[str, T.Any], *, cached_hit: bool, block: str = ''
+    group: NotificationGroup,
+    answer: dict[str, T.Any],
+    *,
+    cached_hit: bool,
+    block: str = '',
+    wp: WorkPackage | None = None,
 ) -> GroupAnalysis:
     classification = answer.get('classification')
     if classification not in CLASSIFICATIONS:
         classification = _FALLBACK_CLASSIFICATION
+    rationale = str(answer.get('rationale') or '')
+    # A direct mention is a fact, not a judgement call: somebody addressed the
+    # user by name. It outranks whatever the model concluded.
+    if group.is_mentioned and classification != 'relevant':
+        classification = 'relevant'
+        rationale = (rationale + ' Direkte Erwähnung im Vorgang.').strip()
     return GroupAnalysis(
         work_package_id=group.work_package_id,
         # The title comes from the API, never from the model.
@@ -205,18 +224,34 @@ def _to_analysis(
         classification=classification,
         summary=str(answer.get('summary') or ''),
         open_points=[str(p) for p in answer.get('open_points') or []],
-        waits_for_me=bool(answer.get('waits_for_me')),
-        rationale=str(answer.get('rationale') or ''),
+        waits_for_me=bool(answer.get('waits_for_me')) or group.is_mentioned,
+        rationale=rationale,
         notification_ids=group.notification_ids,
         project_name=group.project_name,
         count=group.count,
         latest=group.latest,
         cached=cached_hit,
         block=block,
+        is_mentioned=group.is_mentioned,
+        **_people(wp),
     )
 
 
-def _failed(group: NotificationGroup, message: str, *, block: str = '') -> GroupAnalysis:
+def _people(wp: WorkPackage | None) -> dict[str, T.Any]:
+    if wp is None:
+        return {}
+    return {
+        'status_name': wp.status_name,
+        'responsible_id': wp.responsible_id,
+        'responsible_name': wp.responsible_name,
+        'assignee_id': wp.assignee_id,
+        'assignee_name': wp.assignee_name,
+    }
+
+
+def _failed(
+    group: NotificationGroup, message: str, *, block: str = '', wp: WorkPackage | None = None
+) -> GroupAnalysis:
     return GroupAnalysis(
         work_package_id=group.work_package_id,
         title=group.title,
@@ -228,4 +263,6 @@ def _failed(group: NotificationGroup, message: str, *, block: str = '') -> Group
         latest=group.latest,
         error=message,
         block=block,
+        is_mentioned=group.is_mentioned,
+        **_people(wp),
     )

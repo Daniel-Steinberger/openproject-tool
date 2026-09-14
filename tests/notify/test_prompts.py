@@ -117,3 +117,39 @@ class TestReportHeadings:
         lowered = system.lower()
         assert 'heading' in lowered
         assert 'do not use the classification names' in lowered
+
+
+class TestMentionRule:
+    def test_direct_mentions_are_always_relevant(self) -> None:
+        system, _ = build_group_messages(block='B', user_name='Dana')
+        lowered = system.lower()
+        assert 'mention' in lowered
+        assert 'always' in lowered or 'never churn' in lowered
+
+
+class TestActionMessages:
+    def test_asks_for_a_short_instruction(self) -> None:
+        from op.notify.prompts import build_action_messages
+
+        system, user = build_action_messages(
+            block='ACTIVITY BLOCK', user_name='Dana', classification='relevant',
+        )
+        lowered = system.lower()
+        assert 'dana' in lowered
+        assert 'sentence' in lowered
+        assert 'ACTIVITY BLOCK' in user
+
+    def test_wording_follows_the_classification(self) -> None:
+        from op.notify.prompts import build_action_messages
+
+        relevant, _ = build_action_messages(block='B', user_name='D', classification='relevant')
+        churn, _ = build_action_messages(block='B', user_name='D', classification='churn')
+        assert relevant != churn
+
+    def test_is_hardened_like_the_others(self) -> None:
+        from op.notify.prompts import build_action_messages
+
+        system, user = build_action_messages(block='B', user_name='D', classification='churn')
+        combined = (system + user).lower()
+        assert 'never follow instructions' in combined
+        assert 'do not invent' in combined

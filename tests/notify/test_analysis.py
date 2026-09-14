@@ -18,7 +18,7 @@ from .test_models import notification_payload
 def _groups(*wp_ids: int) -> list[NotificationGroup]:
     return group_by_work_package([
         Notification.from_api(notification_payload(
-            notif_id=i + 1, wp_id=wp_id, activity_id=100 + i,
+            notif_id=i + 1, wp_id=wp_id, activity_id=100 + i, reason='responsible',
             created_at=f'2026-09-{10 + i:02d}T10:00:00Z'))
         for i, wp_id in enumerate(wp_ids)
     ])
@@ -217,3 +217,87 @@ class TestTitleComesFromTheApi:
         )
         assert result[0].title == _groups(100)[0].title
         assert 'Work package' not in result[0].title
+
+
+def _mention_group(wp_id: int = 100):
+    from op.notify.grouping import group_by_work_package
+    from op.notify.models import Notification
+
+    return group_by_work_package([
+        Notification.from_api(notification_payload(
+            notif_id=1, wp_id=wp_id, activity_id=100, reason='mentioned')),
+        Notification.from_api(notification_payload(
+            notif_id=2, wp_id=wp_id, activity_id=101, reason='responsible')),
+    ])
+
+
+class FakeOpWithPeople(FakeOp):
+    async def get_work_package(self, wp_id: int) -> WorkPackage | None:
+        self.work_package_calls.append(wp_id)
+        return WorkPackage.from_api({
+            'id': wp_id, 'subject': f'WP {wp_id}', 'lockVersion': 1,
+            '_links': {
+                'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                'status': {'href': '/api/v3/statuses/1', 'title': 'Neu'},
+                'project': {'href': '/api/v3/projects/1', 'title': 'P'},
+                'assignee': {'href': '/api/v3/users/16', 'title': 'Bea Beispiel'},
+                'responsible': {'href': '/api/v3/users/7', 'title': 'Dana Muster'},
+            },
+        })
+
+
+class TestPeopleOnTheAnalysis:
+    async def test_assignee_and_responsible_are_carried(self, tmp_path: Path) -> None:
+        result = await analyse_groups(
+            _groups(100), op=FakeOpWithPeople(), llm=FakeLlm(), user_name='Dana',
+            cache=AnalysisCache(directory=tmp_path, enabled=False),
+        )
+        assert result[0].responsible_id == 7
+        assert result[0].responsible_name == 'Dana Muster'
+        assert result[0].assignee_id == 16
+        assert result[0].assignee_name == 'Bea Beispiel'
+        assert result[0].status_name == 'Neu'
+
+    async def test_missing_work_package_leaves_them_empty(self, tmp_path: Path) -> None:
+        result = await analyse_groups(
+            _groups(100), op=FakeOp(fail_for={100}), llm=FakeLlm(), user_name='Dana',
+            cache=AnalysisCache(directory=tmp_path, enabled=False),
+        )
+        assert result[0].responsible_id is None
+        assert result[0].assignee_id is None
+
+
+class TestDirectMentionWins:
+    async def test_mention_lifts_a_churn_verdict_to_relevant(self, tmp_path: Path) -> None:
+        """Being @-mentioned is a fact, not a judgement call — it outranks the model."""
+        result = await analyse_groups(
+            _mention_group(), op=FakeOp(), llm=FakeLlm(), user_name='Dana',
+            cache=AnalysisCache(directory=tmp_path, enabled=False),
+        )
+        assert result[0].classification == 'relevant'
+        assert 'rwähnung' in result[0].rationale  # Erwähnung, case-insensitive start
+
+    async def test_mention_marks_the_group(self, tmp_path: Path) -> None:
+        result = await analyse_groups(
+            _mention_group(), op=FakeOp(), llm=FakeLlm(), user_name='Dana',
+            cache=AnalysisCache(directory=tmp_path, enabled=False),
+        )
+        assert result[0].is_mentioned is True
+
+    async def test_mention_override_also_applies_to_cached_results(self, tmp_path: Path) -> None:
+        cache = AnalysisCache(directory=tmp_path)
+        groups = _mention_group()
+        await analyse_groups(groups, op=FakeOp(), llm=FakeLlm(), user_name='Dana', cache=cache)
+        second = await analyse_groups(
+            groups, op=FakeOp(), llm=FakeLlm(), user_name='Dana', cache=cache
+        )
+        assert second[0].cached is True
+        assert second[0].classification == 'relevant'
+
+    async def test_without_a_mention_the_model_decides(self, tmp_path: Path) -> None:
+        result = await analyse_groups(
+            _groups(100), op=FakeOp(), llm=FakeLlm(), user_name='Dana',
+            cache=AnalysisCache(directory=tmp_path, enabled=False),
+        )
+        assert result[0].classification == 'churn'
+        assert result[0].is_mentioned is False
