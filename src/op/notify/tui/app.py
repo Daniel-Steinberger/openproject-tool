@@ -11,12 +11,23 @@ from __future__ import annotations
 import typing as T
 
 from textual.app import App
+from textual.message import Message
 
 from op.config import Config
 from op.notify.analysis import GroupAnalysis
+from op.notify.llm import LlmError
 from op.notify.mark import MarkQueue
+from op.notify.prompts import build_action_messages
 
 _CLASSIFICATION_ORDER = {'relevant': 0, 'worth_knowing': 1, 'churn': 2}
+
+
+class ActionLineReady(Message):
+    """One work package's action line has arrived."""
+
+    def __init__(self, work_package_id: int) -> None:
+        super().__init__()
+        self.work_package_id = work_package_id
 
 
 class NotifyApp(App[None]):
@@ -58,6 +69,7 @@ class NotifyApp(App[None]):
         # Runtime only, one entry per work package: the answer does not change
         # while the program runs, and it costs a model call.
         self.action_lines: dict[int, str] = {}
+        self._action_pending: set[int] = set()
         # Where the detail view last stood — the list cursor follows it back.
         self.detail_index: int | None = None
 
@@ -67,6 +79,50 @@ class NotifyApp(App[None]):
 
         apply_to_notify_screens(self.config)
         self.push_screen(NotifyListScreen())
+        if self.llm is not None:
+            # Top to bottom, in list order: what waits gets its line first.
+            self.run_worker(self._fill_action_lines(), exclusive=False, group='action-lines')
+
+    async def _fill_action_lines(self) -> None:
+        for analysis in list(self.analyses):
+            await self.fetch_action_line(analysis)
+
+    async def fetch_action_line(self, analysis: GroupAnalysis) -> None:
+        """Ask the model what this work package wants — at most once per run.
+
+        Called both by the up-front pass and by the detail view, which may open a
+        work package the pass has not reached yet; `_action_pending` keeps the two
+        from asking twice.
+        """
+        work_package_id = analysis.work_package_id
+        if work_package_id is None or self.llm is None:
+            return
+        if work_package_id in self.action_lines or work_package_id in self._action_pending:
+            return
+        self._action_pending.add(work_package_id)
+        system, user = build_action_messages(
+            block=analysis.block,
+            user_name=self.user_name or 'the user',
+            classification=analysis.classification,
+            extra_instructions=self.config.notifications.extra_instructions,
+        )
+        try:
+            answer = (await self.llm.complete_text(system=system, user=user)).strip()
+        except LlmError as exc:
+            answer = f'(nicht verfügbar: {exc})'
+        finally:
+            self._action_pending.discard(work_package_id)
+        self.action_lines[work_package_id] = answer
+        for screen in list(self.screen_stack):
+            screen.post_message(ActionLineReady(work_package_id))
+
+    def action_line(self, analysis: GroupAnalysis) -> str | None:
+        """Finished line, or None while it is still being fetched / not asked for."""
+        return self.action_lines.get(analysis.work_package_id or -1)
+
+    @property
+    def asks_the_model(self) -> bool:
+        return self.llm is not None
 
     def drop_marked(self, work_package_ids: list[int]) -> None:
         """Remove groups that were successfully marked — they are no longer unread."""

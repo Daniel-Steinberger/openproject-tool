@@ -523,3 +523,106 @@ class TestActionLine:
                 await pilot.pause()
             rendered = _static_text(app, '#notify-action')
             assert 'nicht' in rendered.lower()
+
+
+class SlowFakeLlm(FakeLlm):
+    """Records the order in which work packages were asked about."""
+
+    def __init__(self, *, answer: str = 'Tu dies.', fail_for: set[str] | None = None) -> None:
+        super().__init__(answer=answer)
+        self.fail_for = fail_for or set()
+
+    async def complete_text(self, *, system: str, user: str) -> str:
+        from op.notify.llm import LlmError
+
+        self.calls.append(user)
+        for marker in self.fail_for:
+            if marker in user:
+                raise LlmError(f'nope für {marker}')
+        return self.answer
+
+
+class TestActionLinesUpFront:
+    async def test_all_lines_are_fetched_in_list_order(self, people_analyses) -> None:  # noqa: ANN001
+        llm = SlowFakeLlm()
+        app = _app_with_llm(people_analyses, llm)
+        async with app.run_test() as pilot:
+            for _ in range(40):
+                await pilot.pause()
+                if len(llm.calls) == 2:
+                    break
+            assert len(llm.calls) == 2
+            # relevant first (200), then worth_knowing (300) — same order as the list
+            assert 'BLOCK 200' in llm.calls[0]
+            assert 'BLOCK 300' in llm.calls[1]
+
+    async def test_list_shows_the_line_in_its_own_column(self, people_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(people_analyses, SlowFakeLlm(answer='Antwort an BUC geben.'))
+        async with app.run_test() as pilot:
+            table = app.screen.query_one('#notify-list', DataTable)
+            for _ in range(40):
+                await pilot.pause()
+                rendered = ' '.join(
+                    str(cell) for row in range(table.row_count)
+                    for cell in table.get_row_at(row)
+                )
+                if 'Antwort an BUC geben.' in rendered:
+                    break
+            assert 'Antwort an BUC geben.' in rendered
+
+    async def test_placeholder_until_the_answer_arrives(self, people_analyses) -> None:  # noqa: ANN001
+        import asyncio
+
+        released = asyncio.Event()
+
+        class BlockingLlm(SlowFakeLlm):
+            async def complete_text(self, *, system: str, user: str) -> str:
+                await released.wait()
+                return await super().complete_text(system=system, user=user)
+
+        app = _app_with_llm(people_analyses, BlockingLlm())
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            waiting = ' '.join(str(cell) for cell in table.get_row_at(0))
+            assert '…' in waiting
+
+            released.set()
+            for _ in range(40):
+                await pilot.pause()
+                answered = ' '.join(str(cell) for cell in table.get_row_at(0))
+                if 'Tu dies.' in answered:
+                    break
+            assert 'Tu dies.' in answered
+
+    async def test_each_work_package_is_asked_once_even_when_opened(self, people_analyses) -> None:  # noqa: ANN001
+        llm = SlowFakeLlm()
+        app = _app_with_llm(people_analyses, llm)
+        async with app.run_test() as pilot:
+            await pilot.press('enter')          # detail while the run is going on
+            for _ in range(40):
+                await pilot.pause()
+            assert len([c for c in llm.calls if 'BLOCK 200' in c]) == 1
+            assert len([c for c in llm.calls if 'BLOCK 300' in c]) == 1
+
+    async def test_a_failing_line_does_not_stop_the_others(self, people_analyses) -> None:  # noqa: ANN001
+        llm = SlowFakeLlm(fail_for={'BLOCK 200'})
+        app = _app_with_llm(people_analyses, llm)
+        async with app.run_test() as pilot:
+            for _ in range(40):
+                await pilot.pause()
+                if len(llm.calls) == 2:
+                    break
+            assert len(llm.calls) == 2
+            assert app.action_lines.get(300) == 'Tu dies.'
+            assert 'nicht' in (app.action_lines.get(200) or '').lower()
+
+    async def test_without_a_model_nothing_is_fetched(self, people_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(people_analyses, None)
+        async with app.run_test() as pilot:
+            for _ in range(10):
+                await pilot.pause()
+            assert app.action_lines == {}
+            table = app.screen.query_one('#notify-list', DataTable)
+            rendered = ' '.join(str(cell) for cell in table.get_row_at(0))
+            assert '…' not in rendered  # no promise that never gets kept

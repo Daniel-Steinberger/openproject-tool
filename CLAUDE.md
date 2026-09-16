@@ -203,15 +203,22 @@ zwischendurch in die Liste zurückzuspringen. Oben stehen zwei Zeilen über dem 
 - **Rollen-Badges** — Verantwortlicher, Bearbeiter, Status, und ein `@`-Hinweis bei direkter
   Erwähnung. Wo der Leser selbst eingetragen ist, steht `du (Name)` farblich hervorgehoben; das
   ist die Information, die darüber entscheidet, wie viel davon einen angeht.
-- **Handlungszeile** — höchstens zwei Sätze, was dieser Vorgang vom Leser will. Sie wird beim
-  Öffnen **im Hintergrund** beim Modell angefragt (Textual-Worker); der Rest der Seite steht
-  sofort. Das Ergebnis liegt in einem **Laufzeit-Cache** (`NotifyApp.action_lines`), also genau
-  ein Modellaufruf je Work Package pro Programmlauf. Ohne Modell (`--no-llm`) sagt die Zeile das,
-  statt etwas vorzutäuschen; schlägt der Aufruf fehl, steht der Fehler dort und sonst ändert sich
-  nichts.
+- **Handlungszeile** — höchstens zwei Sätze, was dieser Vorgang vom Leser will. Ohne Modell
+  (`--no-llm`) sagt die Zeile das, statt etwas vorzutäuschen; schlägt der Aufruf fehl, steht der
+  Fehler dort und sonst ändert sich nichts.
+
+Die Handlungszeilen entstehen **nicht erst beim Öffnen**: `NotifyApp` startet beim Mount einen
+Worker, der die Liste **von oben nach unten** durchgeht und je Work Package eine Zeile holt. Die
+Liste zeigt sie in der Spalte „Was zu tun ist" und malt sich neu, sobald eine ankommt
+(`ActionLineReady`-Message an alle Screens im Stack); bis dahin steht dort `…`. Öffnet der Leser
+einen Vorgang, den der Durchlauf noch nicht erreicht hat, zieht die Detailseite ihn vor —
+`NotifyApp.fetch_action_line()` ist der gemeinsame Einstieg, und `_action_pending` sorgt dafür,
+dass **pro Work Package trotzdem höchstens ein Modellaufruf** läuft. Die Ergebnisse liegen in
+einem **Laufzeit-Cache** (`NotifyApp.action_lines`), also genau ein Aufruf je Work Package pro
+Programmlauf.
 
 Dafür bleibt der LLM-Client bei `-i` über die Laufzeit der TUI geöffnet — die frühere Regel „die
-TUI spricht nie mit dem Modell" gilt seitdem nur noch für Liste, Review und Applying. **`m` toggelt die Vormerkung, nicht den
+TUI spricht nie mit dem Modell" gilt seitdem nur noch für Review und Applying. **`m` toggelt die Vormerkung, nicht den
 Server-Zustand** — es gibt keinen belegten Weg zurück auf *ungelesen*, geschrieben wird erst beim
 Anwenden. Der Listen-Cursor folgt beim Zurückkehren dorthin, wo `n`/`p` stehengeblieben sind.
 

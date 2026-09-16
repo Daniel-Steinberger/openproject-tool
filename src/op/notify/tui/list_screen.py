@@ -10,6 +10,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header
 
 from op.notify.analysis import GroupAnalysis
+from op.notify.tui.app import ActionLineReady
 
 _MARK_COLUMN = 'mark'
 _CLASSIFICATION_STYLE = {
@@ -40,9 +41,9 @@ class NotifyListScreen(Screen[None]):
         table.add_column('', key=_MARK_COLUMN, width=2)
         table.add_column('WP', width=7)
         table.add_column('Einstufung', width=13)
-        table.add_column('Titel')
-        table.add_column('Offen', width=6)
+        table.add_column('Titel', width=34)
         table.add_column('Anz.', width=5)
+        table.add_column('Was zu tun ist')
         self.populate()
 
     def on_screen_resume(self) -> None:
@@ -74,15 +75,22 @@ class NotifyListScreen(Screen[None]):
             label, style = 'Fehler', 'red'
         marked = self.app.queue.contains(analysis.work_package_id)
         waits = '✓' if analysis.waits_for_me else ''
-        open_points = str(len(analysis.open_points)) if analysis.open_points else ''
         return (
             Text('✓' if marked else '', style='bold green'),
             Text(f'#{analysis.work_package_id}' if analysis.work_package_id else '—'),
             Text(label, style=style),
-            Text(f'{analysis.title}  {waits}'.rstrip()),
-            Text(open_points),
+            Text(f'{analysis.title}  {waits}'.rstrip(), overflow='ellipsis', no_wrap=True),
             Text(str(analysis.count)),
+            self._action_cell(analysis),
         )
+
+    def _action_cell(self, analysis: GroupAnalysis) -> Text:
+        line = self.app.action_line(analysis)
+        if line:
+            return Text(line, overflow='ellipsis', no_wrap=True)
+        if self.app.asks_the_model:
+            return Text('…', style='dim')
+        return Text('')
 
     @staticmethod
     def _key(analysis: GroupAnalysis) -> str:
@@ -152,6 +160,10 @@ class NotifyListScreen(Screen[None]):
             return
         base = self.app.config.connection.base_url.rstrip('/')
         webbrowser.open(f'{base}/work_packages/{analysis.work_package_id}')
+
+    def on_action_line_ready(self, _: ActionLineReady) -> None:
+        # Repaint as the lines trickle in, keeping cursor and selection.
+        self.populate()
 
     def on_data_table_row_selected(self, _: DataTable.RowSelected) -> None:
         from op.notify.tui.detail_screen import NotifyDetailScreen

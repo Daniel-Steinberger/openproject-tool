@@ -23,8 +23,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Markdown, Static
 
 from op.notify.analysis import GroupAnalysis
-from op.notify.llm import LlmError
-from op.notify.prompts import build_action_messages
+from op.notify.tui.app import ActionLineReady
 
 _MINE = 'bold magenta'
 _OTHER = 'dim'
@@ -88,10 +87,10 @@ class NotifyDetailScreen(Screen[None]):
         a = self.analysis
         if a is None:
             return Text('')
-        cached = self.app.action_lines.get(a.work_package_id or -1)
-        if cached:
-            return Text(cached, style='bold')
-        if self.app.llm is None:
+        line = self.app.action_line(a)
+        if line:
+            return Text(line, style='bold')
+        if not self.app.asks_the_model:
             return Text('(ohne Modell gestartet — keine Handlungsempfehlung)', style=_PENDING)
         return Text('… wird ermittelt', style=_PENDING)
 
@@ -139,28 +138,17 @@ class NotifyDetailScreen(Screen[None]):
     # --- action line -----------------------------------------------------
 
     def _request_action_line(self) -> None:
+        """Pull this work package forward if the up-front pass has not reached it."""
         a = self.analysis
-        if a is None or self.app.llm is None or a.work_package_id is None:
+        if a is None or not self.app.asks_the_model:
             return
-        if a.work_package_id in self.app.action_lines:
+        if self.app.action_line(a) is not None:
             return
-        self.run_worker(self._fetch_action_line(a), exclusive=False, group='action-line')
+        self.run_worker(self.app.fetch_action_line(a), exclusive=False, group='action-line')
 
-    async def _fetch_action_line(self, analysis: GroupAnalysis) -> None:
-        work_package_id = analysis.work_package_id
-        system, user = build_action_messages(
-            block=analysis.block,
-            user_name=self.app.user_name or 'the user',
-            classification=analysis.classification,
-            extra_instructions=self.app.config.notifications.extra_instructions,
-        )
-        try:
-            answer = (await self.app.llm.complete_text(system=system, user=user)).strip()
-        except LlmError as exc:
-            answer = f'(Handlungsempfehlung nicht verfügbar: {exc})'
-        self.app.action_lines[work_package_id or -1] = answer
-        # The reader may have moved on in the meantime — only paint if still here.
-        if self.is_attached and self.analysis is analysis:
+    def on_action_line_ready(self, message: ActionLineReady) -> None:
+        a = self.analysis
+        if a is not None and a.work_package_id == message.work_package_id:
             self.query_one('#notify-action', Static).update(self._action_line())
 
     # --- actions ---------------------------------------------------------
