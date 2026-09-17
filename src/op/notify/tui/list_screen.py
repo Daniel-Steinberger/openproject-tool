@@ -13,6 +13,11 @@ from op.notify.analysis import GroupAnalysis
 from op.notify.tui.app import ActionLineReady
 
 _MARK_COLUMN = 'mark'
+_ACTION_COLUMN = 'action'
+# Everything left of the action column, including cell padding and borders.
+_FIXED_COLUMNS_WIDTH = 2 + 7 + 13 + 34 + 5
+_COLUMN_PADDING = 2 * 6
+_MIN_ACTION_WIDTH = 20
 _CLASSIFICATION_STYLE = {
     'relevant': ('relevant', 'bold red'),
     'worth_knowing': ('zur Kenntnis', 'yellow'),
@@ -27,9 +32,16 @@ class NotifyListScreen(Screen[None]):
         Binding('c', 'select_churn', 'Rauschen', show=True),
         Binding('a', 'select_all', 'Alle', show=True),
         Binding('g', 'review', 'Review', show=True),
+        Binding('w', 'toggle_wrap', 'Umbruch', show=True),
         Binding('o', 'open_browser', 'Browser', show=True),
         Binding('q', 'quit', 'Beenden', show=True),
     ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Wrapped by default: the action line is the point of the column, and a
+        # sentence cut off mid-word says less than a two-line row costs.
+        self.wrap_action = True
 
     def compose(self):  # noqa: ANN201
         yield Header()
@@ -43,8 +55,16 @@ class NotifyListScreen(Screen[None]):
         table.add_column('Einstufung', width=13)
         table.add_column('Titel', width=34)
         table.add_column('Anz.', width=5)
-        table.add_column('Was zu tun ist')
+        table.add_column('Was zu tun ist', key=_ACTION_COLUMN, width=self._action_width())
         self.populate()
+
+    def on_resize(self, _: object) -> None:
+        self.populate()
+
+    def _action_width(self) -> int:
+        """Remaining terminal width — DataTable cannot size a column by ratio."""
+        available = self.size.width - _FIXED_COLUMNS_WIDTH - _COLUMN_PADDING
+        return max(_MIN_ACTION_WIDTH, available)
 
     def on_screen_resume(self) -> None:
         # Coming back from review/applying: what was marked is gone by then.
@@ -61,8 +81,12 @@ class NotifyListScreen(Screen[None]):
         table = self.query_one('#notify-list', DataTable)
         cursor = table.cursor_row
         table.clear()
+        if _ACTION_COLUMN in table.columns:
+            table.columns[_ACTION_COLUMN].width = self._action_width()
+        # height=None lets a wrapped action line grow the row; 1 keeps it flat.
+        height = None if self.wrap_action else 1
         for analysis in self.app.analyses:
-            table.add_row(*self._row(analysis), key=self._key(analysis))
+            table.add_row(*self._row(analysis), key=self._key(analysis), height=height)
         self._update_subtitle()
         if cursor:
             table.move_cursor(row=min(cursor, max(table.row_count - 1, 0)))
@@ -87,6 +111,8 @@ class NotifyListScreen(Screen[None]):
     def _action_cell(self, analysis: GroupAnalysis) -> Text:
         line = self.app.action_line(analysis)
         if line:
+            if self.wrap_action:
+                return Text(line)
             return Text(line, overflow='ellipsis', no_wrap=True)
         if self.app.asks_the_model:
             return Text('…', style='dim')
@@ -141,6 +167,10 @@ class NotifyListScreen(Screen[None]):
         self.app.queue.clear()
         for analysis in self.app.analyses:
             self.app.queue.add(analysis)
+        self.populate()
+
+    def action_toggle_wrap(self) -> None:
+        self.wrap_action = not self.wrap_action
         self.populate()
 
     def action_review(self) -> None:

@@ -263,6 +263,7 @@ class NotifyListKeybindings(BaseModel):
     mark_churn: KeyStr = 'c'
     mark_all: KeyStr = 'a'
     apply: KeyStr = 'g'
+    wrap: KeyStr = 'w'
     open: KeyStr = 'o'
     quit: KeyStr = 'q'
 
@@ -572,6 +573,7 @@ _KB_COMMENTS: dict[str, dict[str, str]] = {
         'mark_churn': 'select everything classified as churn',
         'mark_all': 'select everything',
         'apply': 'go to review/apply queue',
+        'wrap': 'wrap the action column over several lines',
         'open': 'open work package in browser',
         'quit': '',
     },

@@ -626,3 +626,64 @@ class TestActionLinesUpFront:
             table = app.screen.query_one('#notify-list', DataTable)
             rendered = ' '.join(str(cell) for cell in table.get_row_at(0))
             assert '…' not in rendered  # no promise that never gets kept
+
+
+class TestActionColumnWrapping:
+    LONG = ('Entscheide, ob der Zugang bestellt wird, und trage den Schlüssel danach in '
+            'die Live-Konfiguration ein, sonst bleibt der Vorgang liegen.')
+
+    def _app(self, people_analyses, **kwargs):  # noqa: ANN001, ANN201
+        app = _app_with_llm(people_analyses, None, **kwargs)
+        app.action_lines = {200: self.LONG, 300: 'Kurz.'}
+        return app
+
+    async def test_wraps_by_default(self, people_analyses) -> None:  # noqa: ANN001
+        app = self._app(people_analyses)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            row = table.rows[table.ordered_rows[0].key]
+            assert row.height > 1, 'lange Handlungszeile bleibt einzeilig'
+
+    async def test_short_lines_stay_on_one_line(self, people_analyses) -> None:  # noqa: ANN001
+        app = self._app(people_analyses)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            row = table.rows[table.ordered_rows[1].key]
+            assert row.height == 1
+
+    async def test_w_toggles_back_to_one_line(self, people_analyses) -> None:  # noqa: ANN001
+        app = self._app(people_analyses)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press('w')
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            assert table.rows[table.ordered_rows[0].key].height == 1
+            await pilot.press('w')
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            assert table.rows[table.ordered_rows[0].key].height > 1
+
+    async def test_column_uses_the_remaining_width(self, people_analyses) -> None:  # noqa: ANN001
+        app = self._app(people_analyses)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            table = app.screen.query_one('#notify-list', DataTable)
+            action_column = list(table.columns.values())[-1]
+            wide = action_column.width
+            assert 20 < wide < 120
+            await pilot.resize_terminal(80, 30)
+            await pilot.pause()
+            narrow = list(table.columns.values())[-1].width
+            assert narrow < wide
+
+    async def test_selection_survives_the_toggle(self, people_analyses) -> None:  # noqa: ANN001
+        app = self._app(people_analyses)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press('space')
+            await pilot.press('w')
+            await pilot.pause()
+            assert app.queue.count == 1
