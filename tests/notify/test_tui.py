@@ -711,3 +711,15 @@ class TestOpenClosedColumn:
         async with app.run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             assert all('offen' not in row and ' zu ' not in row for row in self._rows(app))
+
+    async def test_shift_c_selects_every_closed_work_package(self, people_analyses) -> None:  # noqa: ANN001
+        unknown = people_analyses[1].model_copy(update={'work_package_id': 400,
+                                                        'notification_ids': [5]})
+        people_analyses[0].is_closed = False
+        people_analyses[1].is_closed = True
+        app = _app_with_llm([*people_analyses, unknown], None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press('space')          # an earlier selection is replaced, like `c`
+            await pilot.press('C')
+            assert app.queue.notification_ids == [4]

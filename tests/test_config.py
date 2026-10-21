@@ -543,6 +543,7 @@ class TestNotifyKeybindings:
         kb = KeybindingsConfig()
         assert kb.notify_list.toggle == 'space'
         assert kb.notify_list.mark_churn == 'c'
+        assert kb.notify_list.mark_closed == 'C'
         assert kb.notify_list.mark_all == 'a'
         assert kb.notify_list.apply == 'g'
         assert kb.notify_list.open == 'o'
