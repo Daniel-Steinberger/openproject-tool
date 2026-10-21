@@ -41,6 +41,7 @@ class GroupAnalysis(BaseModel):
     notification_ids: list[int] = Field(default_factory=list)
     project_name: str | None = None
     status_name: str | None = None
+    is_closed: bool | None = None
     responsible_id: int | None = None
     responsible_name: str | None = None
     assignee_id: int | None = None
@@ -242,6 +243,7 @@ def _people(wp: WorkPackage | None) -> dict[str, T.Any]:
         return {}
     return {
         'status_name': wp.status_name,
+        'is_closed': wp.is_closed,
         'responsible_id': wp.responsible_id,
         'responsible_name': wp.responsible_name,
         'assignee_id': wp.assignee_id,

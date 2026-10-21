@@ -261,6 +261,7 @@ class NotifyListKeybindings(BaseModel):
     toggle: KeyStr = 'space'
     invert: KeyStr = 'i'
     mark_churn: KeyStr = 'c'
+    mark_closed: KeyStr = 'C'
     mark_all: KeyStr = 'a'
     apply: KeyStr = 'g'
     wrap: KeyStr = 'w'
@@ -571,6 +572,7 @@ _KB_COMMENTS: dict[str, dict[str, str]] = {
         'toggle': 'mark/unmark a notification group',
         'invert': 'invert selection',
         'mark_churn': 'select everything classified as churn',
+        'mark_closed': 'select every work package whose status is closed',
         'mark_all': 'select everything',
         'apply': 'go to review/apply queue',
         'wrap': 'wrap the action column over several lines',

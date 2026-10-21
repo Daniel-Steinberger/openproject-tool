@@ -482,3 +482,28 @@ class TestIdExtraction:
         from op.models import id_from_href
 
         assert id_from_href(href) == expected
+
+
+class TestWorkPackageIsClosed:
+    @staticmethod
+    def _payload(**extra: object) -> dict:
+        return {
+            'id': 1, 'subject': 'S', 'lockVersion': 1,
+            '_links': {
+                'type': {'href': '/api/v3/types/1', 'title': 'Task'},
+                'status': {'href': '/api/v3/statuses/12', 'title': 'Erledigt'},
+                'project': {'href': '/api/v3/projects/1', 'title': 'P'},
+            },
+            **extra,
+        }
+
+    def test_read_from_the_embedded_status(self) -> None:
+        payload = self._payload(_embedded={'status': {'id': 12, 'isClosed': True}})
+        assert WorkPackage.from_api(payload).is_closed is True
+
+    def test_open_status(self) -> None:
+        payload = self._payload(_embedded={'status': {'id': 12, 'isClosed': False}})
+        assert WorkPackage.from_api(payload).is_closed is False
+
+    def test_unknown_without_embedded_status(self) -> None:
+        assert WorkPackage.from_api(self._payload()).is_closed is None

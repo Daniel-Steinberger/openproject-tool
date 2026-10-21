@@ -23,6 +23,7 @@ def apply_to_notify_screens(config: Config) -> None:
         Binding(li.toggle, 'toggle_selected', 'Markieren', show=True),
         Binding(li.invert, 'invert_selection', 'Invertieren', show=True),
         Binding(li.mark_churn, 'select_churn', 'Rauschen', show=True),
+        Binding(li.mark_closed, 'select_closed', 'Geschlossen', show=True),
         Binding(li.mark_all, 'select_all', 'Alle', show=True),
         Binding(li.apply, 'review', 'Review', show=True),
         Binding(li.wrap, 'toggle_wrap', 'Umbruch', show=True),

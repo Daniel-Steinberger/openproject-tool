@@ -240,6 +240,8 @@ class WorkPackage(_ApiModel):
     type_name: str
     status_id: int
     status_name: str
+    # From `_embedded.status.isClosed`; None when the payload does not embed it.
+    is_closed: bool | None = None
     project_id: int
     project_name: str
     priority_id: int | None = None
@@ -291,6 +293,7 @@ class WorkPackage(_ApiModel):
             type_name=_link_title(links, 'type') or '',
             status_id=_link_id(links, 'status') or 0,
             status_name=_link_title(links, 'status') or '',
+            is_closed=((payload.get('_embedded') or {}).get('status') or {}).get('isClosed'),
             project_id=_link_id(links, 'project') or 0,
             project_name=_link_title(links, 'project') or '',
             priority_id=_link_id(links, 'priority'),

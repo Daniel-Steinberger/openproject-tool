@@ -15,8 +15,8 @@ from op.notify.tui.app import ActionLineReady
 _MARK_COLUMN = 'mark'
 _ACTION_COLUMN = 'action'
 # Everything left of the action column, including cell padding and borders.
-_FIXED_COLUMNS_WIDTH = 2 + 7 + 13 + 34 + 5
-_COLUMN_PADDING = 2 * 6
+_FIXED_COLUMNS_WIDTH = 2 + 7 + 5 + 13 + 34 + 5
+_COLUMN_PADDING = 2 * 7
 _MIN_ACTION_WIDTH = 20
 _CLASSIFICATION_STYLE = {
     'relevant': ('relevant', 'bold red'),
@@ -30,6 +30,7 @@ class NotifyListScreen(Screen[None]):
         Binding('space', 'toggle_selected', 'Markieren', show=True),
         Binding('i', 'invert_selection', 'Invertieren', show=True),
         Binding('c', 'select_churn', 'Rauschen', show=True),
+        Binding('C', 'select_closed', 'Geschlossen', show=True),
         Binding('a', 'select_all', 'Alle', show=True),
         Binding('g', 'review', 'Review', show=True),
         Binding('w', 'toggle_wrap', 'Umbruch', show=True),
@@ -52,6 +53,7 @@ class NotifyListScreen(Screen[None]):
         table = self.query_one('#notify-list', DataTable)
         table.add_column('', key=_MARK_COLUMN, width=2)
         table.add_column('WP', width=7)
+        table.add_column('', width=5)
         table.add_column('Einstufung', width=13)
         table.add_column('Titel', width=34)
         table.add_column('Anz.', width=5)
@@ -102,11 +104,21 @@ class NotifyListScreen(Screen[None]):
         return (
             Text('✓' if marked else '', style='bold green'),
             Text(f'#{analysis.work_package_id}' if analysis.work_package_id else '—'),
+            self._open_cell(analysis),
             Text(label, style=style),
             Text(f'{analysis.title}  {waits}'.rstrip(), overflow='ellipsis', no_wrap=True),
             Text(str(analysis.count)),
             self._action_cell(analysis),
         )
+
+    @staticmethod
+    def _open_cell(analysis: GroupAnalysis) -> Text:
+        # Open/closed instead of the status name: five columns instead of twenty.
+        if analysis.is_closed is None:
+            return Text('')
+        if analysis.is_closed:
+            return Text('zu', style='dim')
+        return Text('offen', style='green')
 
     def _action_cell(self, analysis: GroupAnalysis) -> Text:
         line = self.app.action_line(analysis)
@@ -160,6 +172,13 @@ class NotifyListScreen(Screen[None]):
         self.app.queue.clear()
         for analysis in self.app.analyses:
             if analysis.is_churn:
+                self.app.queue.add(analysis)
+        self.populate()
+
+    def action_select_closed(self) -> None:
+        self.app.queue.clear()
+        for analysis in self.app.analyses:
+            if analysis.is_closed:
                 self.app.queue.add(analysis)
         self.populate()
 

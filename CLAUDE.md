@@ -193,7 +193,7 @@ teilen sich die Sektionen mit `op`):
 
 | Screen | Tasten |
 |---|---|
-| Liste | `space` markieren, `i` invertieren, `c` alles Rauschen, `a` alles, `Enter` Detail, `g` Review, `o` Browser, `q` beenden |
+| Liste | `space` markieren, `i` invertieren, `c` alles Rauschen, `C` alles Geschlossene, `a` alles, `Enter` Detail, `g` Review, `o` Browser, `q` beenden |
 | Detail | `m` als gelesen vormerken (toggelt), `n` / `p` nächstes / vorheriges Work Package, `o` Browser, `q` zurück zur Liste |
 | Review | `d` entfernen, `g` anwenden, `q` zurück |
 
@@ -206,6 +206,10 @@ zwischendurch in die Liste zurückzuspringen. Oben stehen zwei Zeilen über dem 
 - **Handlungszeile** — höchstens zwei Sätze, was dieser Vorgang vom Leser will. Ohne Modell
   (`--no-llm`) sagt die Zeile das, statt etwas vorzutäuschen; schlägt der Aufruf fehl, steht der
   Fehler dort und sonst ändert sich nichts.
+
+Neben der WP-Nummer zeigt die Liste `offen` / `zu` statt des Statusnamens (spart Breite für die
+Handlungsspalte). Die Angabe kommt aus `_embedded.status.isClosed` des ohnehin geladenen Work
+Packages, also ohne zusätzlichen Call; fehlt sie, bleibt die Zelle leer.
 
 Die Handlungszeilen entstehen **nicht erst beim Öffnen**: `NotifyApp` startet beim Mount einen
 Worker, der die Liste **von oben nach unten** durchgeht und je Work Package eine Zeile holt. Die
