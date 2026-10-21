@@ -243,6 +243,7 @@ class FakeOpWithPeople(FakeOp):
                 'assignee': {'href': '/api/v3/users/16', 'title': 'Bea Beispiel'},
                 'responsible': {'href': '/api/v3/users/7', 'title': 'Dana Muster'},
             },
+            '_embedded': {'status': {'id': 1, 'isClosed': True}},
         })
 
 
@@ -257,6 +258,7 @@ class TestPeopleOnTheAnalysis:
         assert result[0].assignee_id == 16
         assert result[0].assignee_name == 'Bea Beispiel'
         assert result[0].status_name == 'Neu'
+        assert result[0].is_closed is True
 
     async def test_missing_work_package_leaves_them_empty(self, tmp_path: Path) -> None:
         result = await analyse_groups(
@@ -265,6 +267,7 @@ class TestPeopleOnTheAnalysis:
         )
         assert result[0].responsible_id is None
         assert result[0].assignee_id is None
+        assert result[0].is_closed is None
 
 
 class TestDirectMentionWins:

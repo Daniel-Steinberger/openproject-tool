@@ -687,3 +687,27 @@ class TestActionColumnWrapping:
             await pilot.press('w')
             await pilot.pause()
             assert app.queue.count == 1
+
+
+class TestOpenClosedColumn:
+    @staticmethod
+    def _rows(app: NotifyApp) -> list[str]:
+        table = app.screen.query_one('#notify-list', DataTable)
+        return [' '.join(str(cell) for cell in table.get_row_at(r))
+                for r in range(table.row_count)]
+
+    async def test_shows_open_and_closed(self, people_analyses) -> None:  # noqa: ANN001
+        people_analyses[0].is_closed = False
+        people_analyses[1].is_closed = True
+        app = _app_with_llm(people_analyses, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            first, second = self._rows(app)
+            assert 'offen' in first and ' zu ' not in first
+            assert ' zu ' in second and 'offen' not in second
+
+    async def test_unknown_status_stays_empty(self, people_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(people_analyses, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            assert all('offen' not in row and ' zu ' not in row for row in self._rows(app))
