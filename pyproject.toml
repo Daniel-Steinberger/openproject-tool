@@ -35,6 +35,7 @@ Issues = "https://github.com/Daniel-Steinberger/openproject-tool/issues"
 
 [project.scripts]
 op = "op.cli:main"
+opn = "op.notify.cli:main"
 
 [dependency-groups]
 dev = [
