@@ -30,6 +30,7 @@ class NotifyListScreen(Screen[None]):
         Binding('space', 'toggle_selected', 'Markieren', show=True),
         Binding('i', 'invert_selection', 'Invertieren', show=True),
         Binding('c', 'select_churn', 'Rauschen', show=True),
+        Binding('C', 'select_closed', 'Geschlossen', show=True),
         Binding('a', 'select_all', 'Alle', show=True),
         Binding('g', 'review', 'Review', show=True),
         Binding('w', 'toggle_wrap', 'Umbruch', show=True),
@@ -171,6 +172,13 @@ class NotifyListScreen(Screen[None]):
         self.app.queue.clear()
         for analysis in self.app.analyses:
             if analysis.is_churn:
+                self.app.queue.add(analysis)
+        self.populate()
+
+    def action_select_closed(self) -> None:
+        self.app.queue.clear()
+        for analysis in self.app.analyses:
+            if analysis.is_closed:
                 self.app.queue.add(analysis)
         self.populate()
 
