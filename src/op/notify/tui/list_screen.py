@@ -99,7 +99,7 @@ class NotifyListScreen(Screen[None]):
         )
         if analysis.error:
             label, style = 'Fehler', 'red'
-        marked = self.app.queue.contains(analysis.work_package_id)
+        marked = self.app.queue.holds(analysis)
         waits = '✓' if analysis.waits_for_me else ''
         return (
             Text('✓' if marked else '', style='bold green'),
@@ -154,8 +154,8 @@ class NotifyListScreen(Screen[None]):
         analysis = self.current()
         if analysis is None:
             return
-        if self.app.queue.contains(analysis.work_package_id):
-            self.app.queue.remove(analysis.work_package_id)
+        if self.app.queue.holds(analysis):
+            self.app.queue.discard(analysis)
         else:
             self.app.queue.add(analysis)
         self.populate()
@@ -169,16 +169,23 @@ class NotifyListScreen(Screen[None]):
         self.populate()
 
     def action_select_churn(self) -> None:
-        self.app.queue.clear()
-        for analysis in self.app.analyses:
-            if analysis.is_churn:
-                self.app.queue.add(analysis)
-        self.populate()
+        self._toggle_group([a for a in self.app.analyses if a.is_churn])
 
     def action_select_closed(self) -> None:
-        self.app.queue.clear()
-        for analysis in self.app.analyses:
-            if analysis.is_closed:
+        self._toggle_group([a for a in self.app.analyses if a.is_closed])
+
+    def _toggle_group(self, group: list[GroupAnalysis]) -> None:
+        """Add the group to the selection — or, if all of it is already selected, take it out.
+
+        The rest of the selection stays either way, so `c` and `C` combine.
+        """
+        if not group:
+            return
+        if all(self.app.queue.holds(a) for a in group):
+            for analysis in group:
+                self.app.queue.discard(analysis)
+        else:
+            for analysis in group:
                 self.app.queue.add(analysis)
         self.populate()
 

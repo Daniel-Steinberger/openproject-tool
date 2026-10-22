@@ -193,7 +193,7 @@ teilen sich die Sektionen mit `op`):
 
 | Screen | Tasten |
 |---|---|
-| Liste | `space` markieren, `i` invertieren, `c` alles Rauschen, `C` alles Geschlossene, `a` alles, `Enter` Detail, `g` Review, `o` Browser, `q` beenden |
+| Liste | `space` markieren, `i` invertieren, `c` Rauschen, `C` Geschlossene (beide ergänzen die Auswahl; sind schon alle Treffer markiert, nehmen sie sie wieder heraus), `a` alles, `Enter` Detail, `g` Review, `o` Browser, `q` beenden |
 | Detail | `m` als gelesen vormerken (toggelt), `n` / `p` nächstes / vorheriges Work Package, `o` Browser, `q` zurück zur Liste |
 | Review | `d` entfernen, `g` anwenden, `q` zurück |
 
