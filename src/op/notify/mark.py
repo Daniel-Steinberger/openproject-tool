@@ -79,8 +79,13 @@ class MarkQueue:
                 seen.setdefault(notification_id, None)
         return list(seen)
 
+    @staticmethod
+    def _key(analysis: GroupAnalysis) -> object:
+        # Groups without a work package (news, wiki) are told apart by their notifications.
+        return analysis.work_package_id or ('other', tuple(analysis.notification_ids))
+
     def add(self, analysis: GroupAnalysis) -> None:
-        key: object = analysis.work_package_id or ('other', tuple(analysis.notification_ids))
+        key = self._key(analysis)
         existing = self._entries.get(key)
         if existing is None:
             self._entries[key] = analysis
@@ -94,6 +99,12 @@ class MarkQueue:
 
     def contains(self, work_package_id: int | None) -> bool:
         return work_package_id in self._entries
+
+    def holds(self, analysis: GroupAnalysis) -> bool:
+        return self._key(analysis) in self._entries
+
+    def discard(self, analysis: GroupAnalysis) -> None:
+        self._entries.pop(self._key(analysis), None)
 
     def all(self) -> list[GroupAnalysis]:
         return list(self._entries.values())

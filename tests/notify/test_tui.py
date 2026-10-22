@@ -712,7 +712,7 @@ class TestOpenClosedColumn:
             await pilot.pause()
             assert all('offen' not in row and ' zu ' not in row for row in self._rows(app))
 
-    async def test_shift_c_selects_every_closed_work_package(self, people_analyses) -> None:  # noqa: ANN001
+    async def test_shift_c_adds_every_closed_work_package(self, people_analyses) -> None:  # noqa: ANN001
         unknown = people_analyses[1].model_copy(update={'work_package_id': 400,
                                                         'notification_ids': [5]})
         people_analyses[0].is_closed = False
@@ -720,6 +720,70 @@ class TestOpenClosedColumn:
         app = _app_with_llm([*people_analyses, unknown], None)
         async with app.run_test(size=(120, 30)) as pilot:
             await pilot.pause()
-            await pilot.press('space')          # an earlier selection is replaced, like `c`
+            await pilot.press('space')          # an earlier selection is kept
             await pilot.press('C')
-            assert app.queue.notification_ids == [4]
+            assert sorted(app.queue.notification_ids) == [3, 4]
+
+
+def _churn(wp_id: int, ids: list[int], **kw: T.Any) -> GroupAnalysis:
+    return GroupAnalysis(
+        work_package_id=wp_id, title=f'Vorgang {wp_id}', classification='churn',
+        summary='S', notification_ids=ids, count=len(ids), **kw,
+    )
+
+
+class TestSelectionToggles:
+    @pytest.fixture
+    def toggle_analyses(self) -> list[GroupAnalysis]:
+        relevant = GroupAnalysis(
+            work_package_id=200, title='Vorgang 200', classification='relevant', summary='S',
+            notification_ids=[3], count=1, is_closed=True,
+        )
+        return [relevant, _churn(100, [1]), _churn(110, [2], is_closed=True)]
+
+    async def test_c_keeps_an_existing_selection(self, toggle_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(toggle_analyses, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            app.queue.add(toggle_analyses[0])
+            await pilot.press('c')
+            assert sorted(app.queue.notification_ids) == [1, 2, 3]
+
+    async def test_c_twice_deselects_only_the_churn(self, toggle_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(toggle_analyses, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            app.queue.add(toggle_analyses[0])
+            await pilot.press('c')
+            await pilot.press('c')
+            assert app.queue.notification_ids == [3]
+
+    async def test_c_after_a_manual_gap_selects_all_again(self, toggle_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(toggle_analyses, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press('c')
+            app.queue.discard(toggle_analyses[1])
+            await pilot.press('c')
+            assert sorted(app.queue.notification_ids) == [1, 2]
+
+    async def test_shift_c_toggles_like_c(self, toggle_analyses) -> None:  # noqa: ANN001
+        app = _app_with_llm(toggle_analyses, None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            app.queue.add(toggle_analyses[1])
+            await pilot.press('C')
+            assert sorted(app.queue.notification_ids) == [1, 2, 3]
+            await pilot.press('C')
+            assert app.queue.notification_ids == [1]
+
+    async def test_groups_without_work_package_toggle_too(self) -> None:
+        news = GroupAnalysis(work_package_id=None, title='News', classification='churn',
+                             summary='S', notification_ids=[7], count=1)
+        app = _app_with_llm([news], None)
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            await pilot.press('c')
+            assert app.queue.notification_ids == [7]
+            await pilot.press('c')
+            assert app.queue.count == 0
