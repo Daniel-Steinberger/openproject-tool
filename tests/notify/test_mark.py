@@ -87,6 +87,18 @@ class TestMarkQueue:
         queue.remove(100)
         assert queue.notification_ids == [2]
 
+    def test_holds_and_discards_by_group(self) -> None:
+        queue = MarkQueue()
+        work_package = _analysis(100, 'churn', [1])
+        news = GroupAnalysis(work_package_id=None, title='News', classification='churn',
+                             summary='S', notification_ids=[7])
+        queue.add(work_package)
+        queue.add(news)
+        assert queue.holds(work_package) and queue.holds(news)
+        queue.discard(news)
+        assert not queue.holds(news)
+        assert queue.notification_ids == [1]
+
     async def test_apply_marks_every_notification(self) -> None:
         queue = MarkQueue()
         queue.add(_analysis(100, 'churn', [1, 2]))
